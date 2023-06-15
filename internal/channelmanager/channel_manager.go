@@ -70,6 +70,7 @@ func (chanManager *ChannelManager) startNotifyCancelOrClosed() {
 			chanManager.reconnectLoop()
 			chanManager.logger.Warnf("successfully reconnected to amqp server")
 			chanManager.dispatcher.Dispatch(err)
+			chanManager.dispatcher.DispatchLooseConnection(err)
 		}
 		if err == nil {
 			chanManager.logger.Infof("amqp channel closed gracefully")
@@ -79,6 +80,7 @@ func (chanManager *ChannelManager) startNotifyCancelOrClosed() {
 		chanManager.reconnectLoop()
 		chanManager.logger.Warnf("successfully reconnected to amqp server after cancel")
 		chanManager.dispatcher.Dispatch(errors.New(err))
+		chanManager.dispatcher.DispatchLooseConnection(errors.New(err))
 	}
 }
 
@@ -134,16 +136,11 @@ func (chanManager *ChannelManager) Close() error {
 	chanManager.channelMux.Lock()
 	defer chanManager.channelMux.Unlock()
 
-	err := chanManager.channel.Close()
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return chanManager.channel.Close()
 }
 
 // NotifyReconnect adds a new subscriber that will receive error messages whenever
 // the connection manager has successfully reconnect to the server
-func (chanManager *ChannelManager) NotifyReconnect() (<-chan error, chan<- struct{}) {
+func (chanManager *ChannelManager) NotifyReconnect() (<-chan error, chan<- struct{}, <-chan error) {
 	return chanManager.dispatcher.AddSubscriber()
 }

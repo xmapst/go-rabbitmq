@@ -24,7 +24,7 @@ type ConnectionManager struct {
 
 // NewConnectionManager creates a new connection manager
 func NewConnectionManager(url string, conf amqp.Config, log logger.Logger, reconnectInterval time.Duration) (*ConnectionManager, error) {
-	conn, err := amqp.DialConfig(url, amqp.Config(conf))
+	conn, err := amqp.DialConfig(url, conf)
 	if err != nil {
 		return nil, err
 	}
@@ -49,16 +49,12 @@ func (connManager *ConnectionManager) Close() error {
 	connManager.connectionMux.Lock()
 	defer connManager.connectionMux.Unlock()
 
-	err := connManager.connection.Close()
-	if err != nil {
-		return err
-	}
-	return nil
+	return connManager.connection.Close()
 }
 
 // NotifyReconnect adds a new subscriber that will receive error messages whenever
 // the connection manager has successfully reconnected to the server
-func (connManager *ConnectionManager) NotifyReconnect() (<-chan error, chan<- struct{}) {
+func (connManager *ConnectionManager) NotifyReconnect() (<-chan error, chan<- struct{}, <-chan error) {
 	return connManager.dispatcher.AddSubscriber()
 }
 
@@ -83,9 +79,11 @@ func (connManager *ConnectionManager) startNotifyClose() {
 	err := <-notifyCloseChan
 	if err != nil {
 		connManager.logger.Errorf("attempting to reconnect to amqp server after connection close with error: %v", err)
+		connManager.dispatcher.DispatchLooseConnection(err)
 		connManager.reconnectLoop()
 		connManager.logger.Warnf("successfully reconnected to amqp server")
 		_ = connManager.dispatcher.Dispatch(err)
+		connManager.dispatcher.DispatchLooseConnection(nil)
 	}
 	if err == nil {
 		connManager.logger.Infof("amqp connection closed gracefully")
@@ -125,7 +123,7 @@ func (connManager *ConnectionManager) reconnectLoop() {
 func (connManager *ConnectionManager) reconnect() error {
 	connManager.connectionMux.Lock()
 	defer connManager.connectionMux.Unlock()
-	newConn, err := amqp.DialConfig(connManager.url, amqp.Config(connManager.amqpConfig))
+	newConn, err := amqp.DialConfig(connManager.url, connManager.amqpConfig)
 	if err != nil {
 		return err
 	}

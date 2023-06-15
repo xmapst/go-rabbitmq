@@ -32,7 +32,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	err = channel.QueueBindSafe("re_my_routing_key", "re_my_queue", "events", false, amqp091.Table{})
 	if err != nil {
 		log.Fatal(err)

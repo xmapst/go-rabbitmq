@@ -83,7 +83,7 @@ func NewPublisher(conn *Conn, optionFuncs ...func(*PublisherOptions)) (*Publishe
 		return nil, err
 	}
 
-	reconnectErrCh, closeCh := chanManager.NotifyReconnect()
+	reconnectErrCh, closeCh, _ := chanManager.NotifyReconnect()
 	publisher := &Publisher{
 		chanManager:                   chanManager,
 		connManager:                   conn.connectionManager,
@@ -173,6 +173,14 @@ func (publisher *Publisher) PublishWithContext(
 		options.DeliveryMode = Transient
 	}
 
+	if options.Exchange == "" && publisher.options.ExchangeOptions.Name != "" {
+		options.Exchange = publisher.options.ExchangeOptions.Name
+	}
+
+	if options.Exchange == "" {
+		return fmt.Errorf("publishing to empty exchange")
+	}
+
 	for _, routingKey := range routingKeys {
 		message := amqp.Publishing{}
 		message.ContentType = options.ContentType
@@ -234,6 +242,14 @@ func (publisher *Publisher) PublishWithDeferredConfirmWithContext(
 	}
 	if options.DeliveryMode == 0 {
 		options.DeliveryMode = Transient
+	}
+
+	if options.Exchange == "" && publisher.options.ExchangeOptions.Name != "" {
+		options.Exchange = publisher.options.ExchangeOptions.Name
+	}
+
+	if options.Exchange == "" {
+		return nil, fmt.Errorf("publishing to empty exchange")
 	}
 
 	var deferredConfirmations []*amqp.DeferredConfirmation

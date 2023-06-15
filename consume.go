@@ -32,6 +32,7 @@ type Consumer struct {
 	reconnectErrCh             <-chan error
 	closeConnectionToManagerCh chan<- struct{}
 	options                    ConsumerOptions
+	notifyClosedChan           <-chan error
 
 	isClosedMux *sync.RWMutex
 	isClosed    bool
@@ -67,22 +68,22 @@ func NewConsumer(
 	if err != nil {
 		return nil, err
 	}
-	reconnectErrCh, closeCh := chanManager.NotifyReconnect()
+	reconnectErrCh, closeCh, notifyClosedChan := chanManager.NotifyReconnect()
 
 	consumer := &Consumer{
 		chanManager:                chanManager,
 		reconnectErrCh:             reconnectErrCh,
 		closeConnectionToManagerCh: closeCh,
+		notifyClosedChan:           notifyClosedChan,
 		options:                    *options,
 		isClosedMux:                &sync.RWMutex{},
 		isClosed:                   false,
 	}
 
-	err = consumer.startGoroutines(
+	if err = consumer.startGoroutines(
 		handler,
 		*options,
-	)
-	if err != nil {
+	); err != nil {
 		return nil, err
 	}
 
@@ -114,15 +115,12 @@ func (consumer *Consumer) Close() {
 	consumer.isClosed = true
 	// close the channel so that rabbitmq server knows that the
 	// consumer has been stopped.
-	err := consumer.chanManager.Close()
-	if err != nil {
+	if err := consumer.chanManager.Close(); err != nil {
 		consumer.options.Logger.Warnf("error while closing the channel: %v", err)
 	}
 
 	consumer.options.Logger.Infof("closing consumer...")
-	go func() {
-		consumer.closeConnectionToManagerCh <- struct{}{}
-	}()
+	consumer.closeConnectionToManagerCh <- struct{}{}
 }
 
 // startGoroutines declares the queue if it doesn't exist,
@@ -132,24 +130,20 @@ func (consumer *Consumer) startGoroutines(
 	handler Handler,
 	options ConsumerOptions,
 ) error {
-	err := consumer.chanManager.QosSafe(
+	if err := consumer.chanManager.QosSafe(
 		options.QOSPrefetch,
 		0,
 		options.QOSGlobal,
-	)
-	if err != nil {
+	); err != nil {
 		return fmt.Errorf("declare qos failed: %w", err)
 	}
-	err = declareExchange(consumer.chanManager, options.ExchangeOptions)
-	if err != nil {
+	if err := declareExchange(consumer.chanManager, options.ExchangeOptions); err != nil {
 		return fmt.Errorf("declare exchange failed: %w", err)
 	}
-	err = declareQueue(consumer.chanManager, options.QueueOptions)
-	if err != nil {
+	if err := declareQueue(consumer.chanManager, options.QueueOptions); err != nil {
 		return fmt.Errorf("declare queue failed: %w", err)
 	}
-	err = declareBindings(consumer.chanManager, options)
-	if err != nil {
+	if err := declareBindings(consumer.chanManager, options); err != nil {
 		return fmt.Errorf("declare bindings failed: %w", err)
 	}
 
