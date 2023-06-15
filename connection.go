@@ -4,13 +4,13 @@ import (
 	"sync"
 
 	amqp "github.com/rabbitmq/amqp091-go"
-	"github.com/xmapst/go-rabbitmq/internal/connectionmanager"
+	"github.com/xmapst/go-rabbitmq/internal/manager/connection"
 )
 
 // Conn manages the connection to a rabbit cluster
 // it is intended to be shared across publishers and consumers
 type Conn struct {
-	connectionManager          *connectionmanager.ConnectionManager
+	connManager                *connection.Manager
 	reconnectErrCh             <-chan error
 	closeConnectionToManagerCh chan<- struct{}
 	reconnectHooks             []func(error)
@@ -34,14 +34,14 @@ func NewConn(url string, optionFuncs ...func(*ConnectionOptions)) (*Conn, error)
 		optionFunc(options)
 	}
 
-	manager, err := connectionmanager.NewConnectionManager(url, amqp.Config(options.Config), options.Logger, options.ReconnectInterval)
+	manager, err := connection.New(url, amqp.Config(options.Config), options.Logger, options.ReconnectInterval)
 	if err != nil {
 		return nil, err
 	}
 
 	reconnectErrCh, closeCh, looseConnectionCh := manager.NotifyReconnect()
 	conn := &Conn{
-		connectionManager:          manager,
+		connManager:                manager,
 		reconnectErrCh:             reconnectErrCh,
 		closeConnectionToManagerCh: closeCh,
 		options:                    *options,
@@ -76,7 +76,7 @@ func (conn *Conn) handleRestarts() {
 // closing the connection
 func (conn *Conn) Close() error {
 	conn.closeConnectionToManagerCh <- struct{}{}
-	return conn.connectionManager.Close()
+	return conn.connManager.Close()
 }
 
 func (conn *Conn) RegisterReconnectHook(hook func(error)) {

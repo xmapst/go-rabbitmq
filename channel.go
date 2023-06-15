@@ -4,28 +4,28 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/xmapst/go-rabbitmq/internal/channelmanager"
+	"github.com/xmapst/go-rabbitmq/internal/manager/channel"
 )
 
 // NewChannel returns a new channel to the cluster.
-func NewChannel(conn *Conn, optionFuncs ...func(*ChannelOptions)) (*channelmanager.ChannelManager, error) {
+func NewChannel(conn *Conn, optionFuncs ...func(*ChannelOptions)) (*channel.Manager, error) {
 	defaultOptions := getDefaultChannelOptions()
 	options := &defaultOptions
 	for _, optionFunc := range optionFuncs {
 		optionFunc(options)
 	}
 
-	if conn.connectionManager == nil {
+	if conn.connManager == nil {
 		return nil, errors.New("connection manager can't be nil")
 	}
-	channel, err := channelmanager.NewChannelManager(conn.connectionManager, options.Logger, conn.connectionManager.ReconnectInterval)
+	chanManager, err := channel.New(conn.connManager, options.Logger, conn.connManager.ReconnectInterval)
 	if err != nil {
 		return nil, err
 	}
-	err = channel.QosSafe(options.QOSPrefetch, 0, options.QOSGlobal)
+	err = chanManager.QosSafe(options.QOSPrefetch, 0, options.QOSGlobal)
 	if err != nil {
-		_ = channel.Close()
+		_ = chanManager.Close()
 		return nil, fmt.Errorf("declare qos failed: %w", err)
 	}
-	return channel, nil
+	return chanManager, nil
 }

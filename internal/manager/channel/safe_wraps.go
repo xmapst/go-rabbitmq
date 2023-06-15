@@ -1,4 +1,4 @@
-package channelmanager
+package channel
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 )
 
 // ConsumeSafe safely wraps the (*amqp.Channel).Consume method
-func (chanManager *ChannelManager) ConsumeSafe(
+func (m *Manager) ConsumeSafe(
 	queue,
 	consumer string,
 	autoAck,
@@ -16,10 +16,10 @@ func (chanManager *ChannelManager) ConsumeSafe(
 	noWait bool,
 	args amqp.Table,
 ) (<-chan amqp.Delivery, error) {
-	chanManager.channelMux.RLock()
-	defer chanManager.channelMux.RUnlock()
+	m.channelMux.RLock()
+	defer m.channelMux.RUnlock()
 
-	return chanManager.channel.Consume(
+	return m.channel.Consume(
 		queue,
 		consumer,
 		autoAck,
@@ -31,7 +31,7 @@ func (chanManager *ChannelManager) ConsumeSafe(
 }
 
 // QueueDeclarePassiveSafe safely wraps the (*amqp.Channel).QueueDeclarePassive method
-func (chanManager *ChannelManager) QueueDeclarePassiveSafe(
+func (m *Manager) QueueDeclarePassiveSafe(
 	name string,
 	durable bool,
 	autoDelete bool,
@@ -39,10 +39,10 @@ func (chanManager *ChannelManager) QueueDeclarePassiveSafe(
 	noWait bool,
 	args amqp.Table,
 ) (amqp.Queue, error) {
-	chanManager.channelMux.RLock()
-	defer chanManager.channelMux.RUnlock()
+	m.channelMux.RLock()
+	defer m.channelMux.RUnlock()
 
-	return chanManager.channel.QueueDeclarePassive(
+	return m.channel.QueueDeclarePassive(
 		name,
 		durable,
 		autoDelete,
@@ -53,13 +53,13 @@ func (chanManager *ChannelManager) QueueDeclarePassiveSafe(
 }
 
 // QueueDeclareSafe safely wraps the (*amqp.Channel).QueueDeclare method
-func (chanManager *ChannelManager) QueueDeclareSafe(
+func (m *Manager) QueueDeclareSafe(
 	name string, durable bool, autoDelete bool, exclusive bool, noWait bool, args amqp.Table,
 ) (amqp.Queue, error) {
-	chanManager.channelMux.RLock()
-	defer chanManager.channelMux.RUnlock()
+	m.channelMux.RLock()
+	defer m.channelMux.RUnlock()
 
-	return chanManager.channel.QueueDeclare(
+	return m.channel.QueueDeclare(
 		name,
 		durable,
 		autoDelete,
@@ -70,13 +70,13 @@ func (chanManager *ChannelManager) QueueDeclareSafe(
 }
 
 // ExchangeDeclarePassiveSafe safely wraps the (*amqp.Channel).ExchangeDeclarePassive method
-func (chanManager *ChannelManager) ExchangeDeclarePassiveSafe(
+func (m *Manager) ExchangeDeclarePassiveSafe(
 	name string, kind string, durable bool, autoDelete bool, internal bool, noWait bool, args amqp.Table,
 ) error {
-	chanManager.channelMux.RLock()
-	defer chanManager.channelMux.RUnlock()
+	m.channelMux.RLock()
+	defer m.channelMux.RUnlock()
 
-	return chanManager.channel.ExchangeDeclarePassive(
+	return m.channel.ExchangeDeclarePassive(
 		name,
 		kind,
 		durable,
@@ -88,13 +88,13 @@ func (chanManager *ChannelManager) ExchangeDeclarePassiveSafe(
 }
 
 // ExchangeDeclareSafe safely wraps the (*amqp.Channel).ExchangeDeclare method
-func (chanManager *ChannelManager) ExchangeDeclareSafe(
+func (m *Manager) ExchangeDeclareSafe(
 	name string, kind string, durable bool, autoDelete bool, internal bool, noWait bool, args amqp.Table,
 ) error {
-	chanManager.channelMux.RLock()
-	defer chanManager.channelMux.RUnlock()
+	m.channelMux.RLock()
+	defer m.channelMux.RUnlock()
 
-	return chanManager.channel.ExchangeDeclare(
+	return m.channel.ExchangeDeclare(
 		name,
 		kind,
 		durable,
@@ -105,13 +105,13 @@ func (chanManager *ChannelManager) ExchangeDeclareSafe(
 	)
 }
 
-func (chanManager *ChannelManager) ExchangeBindSafe(
+func (m *Manager) ExchangeBindSafe(
 	destination, key, source string, noWait bool, args amqp.Table,
 ) error {
-	chanManager.channelMux.RLock()
-	defer chanManager.channelMux.RUnlock()
+	m.channelMux.RLock()
+	defer m.channelMux.RUnlock()
 
-	return chanManager.channel.ExchangeBind(
+	return m.channel.ExchangeBind(
 		destination,
 		key,
 		source,
@@ -121,13 +121,13 @@ func (chanManager *ChannelManager) ExchangeBindSafe(
 }
 
 // QueueBindSafe safely wraps the (*amqp.Channel).QueueBind method
-func (chanManager *ChannelManager) QueueBindSafe(
+func (m *Manager) QueueBindSafe(
 	name string, key string, exchange string, noWait bool, args amqp.Table,
 ) error {
-	chanManager.channelMux.RLock()
-	defer chanManager.channelMux.RUnlock()
+	m.channelMux.RLock()
+	defer m.channelMux.RUnlock()
 
-	return chanManager.channel.QueueBind(
+	return m.channel.QueueBind(
 		name,
 		key,
 		exchange,
@@ -137,13 +137,13 @@ func (chanManager *ChannelManager) QueueBindSafe(
 }
 
 // QosSafe safely wraps the (*amqp.Channel).Qos method
-func (chanManager *ChannelManager) QosSafe(
+func (m *Manager) QosSafe(
 	prefetchCount int, prefetchSize int, global bool,
 ) error {
-	chanManager.channelMux.RLock()
-	defer chanManager.channelMux.RUnlock()
+	m.channelMux.RLock()
+	defer m.channelMux.RUnlock()
 
-	return chanManager.channel.Qos(
+	return m.channel.Qos(
 		prefetchCount,
 		prefetchSize,
 		global,
@@ -153,13 +153,13 @@ func (chanManager *ChannelManager) QosSafe(
 /*
 PublishSafe safely wraps the (*amqp.Channel).Publish method.
 */
-func (chanManager *ChannelManager) PublishSafe(
+func (m *Manager) PublishSafe(
 	exchange string, key string, mandatory bool, immediate bool, msg amqp.Publishing,
 ) error {
-	chanManager.channelMux.RLock()
-	defer chanManager.channelMux.RUnlock()
+	m.channelMux.RLock()
+	defer m.channelMux.RUnlock()
 
-	return chanManager.channel.PublishWithContext(
+	return m.channel.PublishWithContext(
 		context.Background(),
 		exchange,
 		key,
@@ -170,13 +170,13 @@ func (chanManager *ChannelManager) PublishSafe(
 }
 
 // PublishWithContextSafe safely wraps the (*amqp.Channel).PublishWithContext method.
-func (chanManager *ChannelManager) PublishWithContextSafe(
+func (m *Manager) PublishWithContextSafe(
 	ctx context.Context, exchange string, key string, mandatory bool, immediate bool, msg amqp.Publishing,
 ) error {
-	chanManager.channelMux.RLock()
-	defer chanManager.channelMux.RUnlock()
+	m.channelMux.RLock()
+	defer m.channelMux.RUnlock()
 
-	return chanManager.channel.PublishWithContext(
+	return m.channel.PublishWithContext(
 		ctx,
 		exchange,
 		key,
@@ -186,13 +186,13 @@ func (chanManager *ChannelManager) PublishWithContextSafe(
 	)
 }
 
-func (chanManager *ChannelManager) PublishWithDeferredConfirmWithContextSafe(
+func (m *Manager) PublishWithDeferredConfirmWithContextSafe(
 	ctx context.Context, exchange string, key string, mandatory bool, immediate bool, msg amqp.Publishing,
 ) (*amqp.DeferredConfirmation, error) {
-	chanManager.channelMux.RLock()
-	defer chanManager.channelMux.RUnlock()
+	m.channelMux.RLock()
+	defer m.channelMux.RUnlock()
 
-	return chanManager.channel.PublishWithDeferredConfirmWithContext(
+	return m.channel.PublishWithDeferredConfirmWithContext(
 		ctx,
 		exchange,
 		key,
@@ -203,49 +203,49 @@ func (chanManager *ChannelManager) PublishWithDeferredConfirmWithContextSafe(
 }
 
 // NotifyReturnSafe safely wraps the (*amqp.Channel).NotifyReturn method
-func (chanManager *ChannelManager) NotifyReturnSafe(
+func (m *Manager) NotifyReturnSafe(
 	c chan amqp.Return,
 ) chan amqp.Return {
-	chanManager.channelMux.RLock()
-	defer chanManager.channelMux.RUnlock()
+	m.channelMux.RLock()
+	defer m.channelMux.RUnlock()
 
-	return chanManager.channel.NotifyReturn(
+	return m.channel.NotifyReturn(
 		c,
 	)
 }
 
 // ConfirmSafe safely wraps the (*amqp.Channel).Confirm method
-func (chanManager *ChannelManager) ConfirmSafe(
+func (m *Manager) ConfirmSafe(
 	noWait bool,
 ) error {
-	chanManager.channelMux.RLock()
-	defer chanManager.channelMux.RUnlock()
+	m.channelMux.RLock()
+	defer m.channelMux.RUnlock()
 
-	return chanManager.channel.Confirm(
+	return m.channel.Confirm(
 		noWait,
 	)
 }
 
 // NotifyPublishSafe safely wraps the (*amqp.Channel).NotifyPublish method
-func (chanManager *ChannelManager) NotifyPublishSafe(
+func (m *Manager) NotifyPublishSafe(
 	confirm chan amqp.Confirmation,
 ) chan amqp.Confirmation {
-	chanManager.channelMux.RLock()
-	defer chanManager.channelMux.RUnlock()
+	m.channelMux.RLock()
+	defer m.channelMux.RUnlock()
 
-	return chanManager.channel.NotifyPublish(
+	return m.channel.NotifyPublish(
 		confirm,
 	)
 }
 
 // NotifyFlowSafe safely wraps the (*amqp.Channel).NotifyFlow method
-func (chanManager *ChannelManager) NotifyFlowSafe(
+func (m *Manager) NotifyFlowSafe(
 	c chan bool,
 ) chan bool {
-	chanManager.channelMux.RLock()
-	defer chanManager.channelMux.RUnlock()
+	m.channelMux.RLock()
+	defer m.channelMux.RUnlock()
 
-	return chanManager.channel.NotifyFlow(
+	return m.channel.NotifyFlow(
 		c,
 	)
 }

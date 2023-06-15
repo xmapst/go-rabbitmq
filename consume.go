@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	amqp "github.com/rabbitmq/amqp091-go"
-	"github.com/xmapst/go-rabbitmq/internal/channelmanager"
+	"github.com/xmapst/go-rabbitmq/internal/manager/channel"
 )
 
 // Action is an action that occurs after processed this delivery
@@ -22,13 +22,13 @@ const (
 	NackDiscard
 	// NackRequeue deliver this message to a different consumer.
 	NackRequeue
-	// Message acknowledgement is left to the user using the msg.Ack() method
+	// Manual Message acknowledgement is left to the user using the msg.Ack() method
 	Manual
 )
 
 // Consumer allows you to create and connect to queues for data consumption.
 type Consumer struct {
-	chanManager                *channelmanager.ChannelManager
+	chanManager                *channel.Manager
 	reconnectErrCh             <-chan error
 	closeConnectionToManagerCh chan<- struct{}
 	options                    ConsumerOptions
@@ -60,11 +60,11 @@ func NewConsumer(
 		optionFunc(options)
 	}
 
-	if conn.connectionManager == nil {
+	if conn.connManager == nil {
 		return nil, errors.New("connection manager can't be nil")
 	}
 
-	chanManager, err := channelmanager.NewChannelManager(conn.connectionManager, options.Logger, conn.connectionManager.ReconnectInterval)
+	chanManager, err := channel.New(conn.connManager, options.Logger, conn.connManager.ReconnectInterval)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +120,7 @@ func (consumer *Consumer) Close() {
 	}
 
 	consumer.options.Logger.Infof("closing consumer...")
-	consumer.closeConnectionToManagerCh <- struct{}{}
+	close(consumer.closeConnectionToManagerCh)
 }
 
 // startGoroutines declares the queue if it doesn't exist,

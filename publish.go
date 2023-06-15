@@ -7,8 +7,8 @@ import (
 	"sync"
 
 	amqp "github.com/rabbitmq/amqp091-go"
-	"github.com/xmapst/go-rabbitmq/internal/channelmanager"
-	"github.com/xmapst/go-rabbitmq/internal/connectionmanager"
+	"github.com/xmapst/go-rabbitmq/internal/manager/channel"
+	"github.com/xmapst/go-rabbitmq/internal/manager/connection"
 )
 
 // DeliveryMode. Transient means higher throughput but messages will not be
@@ -42,8 +42,8 @@ type Confirmation struct {
 
 // Publisher allows you to publish messages safely across an open connection
 type Publisher struct {
-	chanManager                *channelmanager.ChannelManager
-	connManager                *connectionmanager.ConnectionManager
+	chanManager                *channel.Manager
+	connManager                *connection.Manager
 	reconnectErrCh             <-chan error
 	closeConnectionToManagerCh chan<- struct{}
 
@@ -74,11 +74,11 @@ func NewPublisher(conn *Conn, optionFuncs ...func(*PublisherOptions)) (*Publishe
 		optionFunc(options)
 	}
 
-	if conn.connectionManager == nil {
+	if conn.connManager == nil {
 		return nil, errors.New("connection manager can't be nil")
 	}
 
-	chanManager, err := channelmanager.NewChannelManager(conn.connectionManager, options.Logger, conn.connectionManager.ReconnectInterval)
+	chanManager, err := channel.New(conn.connManager, options.Logger, conn.connManager.ReconnectInterval)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +86,7 @@ func NewPublisher(conn *Conn, optionFuncs ...func(*PublisherOptions)) (*Publishe
 	reconnectErrCh, closeCh, _ := chanManager.NotifyReconnect()
 	publisher := &Publisher{
 		chanManager:                   chanManager,
-		connManager:                   conn.connectionManager,
+		connManager:                   conn.connManager,
 		reconnectErrCh:                reconnectErrCh,
 		closeConnectionToManagerCh:    closeCh,
 		disablePublishDueToFlow:       false,
@@ -355,7 +355,7 @@ func (publisher *Publisher) startPublishHandler() {
 	}
 	publisher.handlerMux.Unlock()
 
-	publisher.chanManager.ConfirmSafe(false)
+	_ = publisher.chanManager.ConfirmSafe(false)
 	confirmationCh := publisher.chanManager.NotifyPublishSafe(make(chan amqp.Confirmation, 1))
 	for conf := range confirmationCh {
 		go publisher.notifyPublishHandler(Confirmation{

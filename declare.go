@@ -3,19 +3,19 @@ package rabbitmq
 import (
 	"errors"
 
-	"github.com/xmapst/go-rabbitmq/internal/channelmanager"
+	"github.com/xmapst/go-rabbitmq/internal/manager/channel"
 )
 
 type Declarator struct {
-	chanManager *channelmanager.ChannelManager
+	chanManager *channel.Manager
 }
 
 func NewDeclarator(conn *Conn) (*Declarator, error) {
-	if conn.connectionManager == nil {
+	if conn.connManager == nil {
 		return nil, errors.New("connection manager can't be nil")
 	}
 
-	chanManager, err := channelmanager.NewChannelManager(conn.connectionManager, &stdDebugLogger{}, conn.connectionManager.ReconnectInterval)
+	chanManager, err := channel.New(conn.connManager, &stdDebugLogger{}, conn.connManager.ReconnectInterval)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +85,7 @@ func (d *Declarator) BindQueues(bindings []QueueBinding) error {
 	return nil
 }
 
-func declareQueue(chanManager *channelmanager.ChannelManager, options QueueOptions) error {
+func declareQueue(chanManager *channel.Manager, options QueueOptions) error {
 	if !options.Declare {
 		return nil
 	}
@@ -117,7 +117,7 @@ func declareQueue(chanManager *channelmanager.ChannelManager, options QueueOptio
 	return nil
 }
 
-func declareExchange(chanManager *channelmanager.ChannelManager, options ExchangeOptions) error {
+func declareExchange(chanManager *channel.Manager, options ExchangeOptions) error {
 	if !options.Declare {
 		return nil
 	}
@@ -151,7 +151,7 @@ func declareExchange(chanManager *channelmanager.ChannelManager, options Exchang
 	return nil
 }
 
-func declareBindings(chanManager *channelmanager.ChannelManager, options ConsumerOptions) error {
+func declareBindings(chanManager *channel.Manager, options ConsumerOptions) error {
 	for _, binding := range options.Bindings {
 		if !binding.Declare {
 			continue
