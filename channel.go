@@ -7,8 +7,12 @@ import (
 	"github.com/xmapst/go-rabbitmq/internal/manager/channel"
 )
 
+type Channel struct {
+	*channel.Manager
+}
+
 // NewChannel returns a new channel to the cluster.
-func NewChannel(conn *Conn, optionFuncs ...func(*ChannelOptions)) (*channel.Manager, error) {
+func NewChannel(conn *Conn, optionFuncs ...func(*ChannelOptions)) (*Channel, error) {
 	defaultOptions := getDefaultChannelOptions()
 	options := &defaultOptions
 	for _, optionFunc := range optionFuncs {
@@ -27,5 +31,5 @@ func NewChannel(conn *Conn, optionFuncs ...func(*ChannelOptions)) (*channel.Mana
 		_ = chanManager.Close()
 		return nil, fmt.Errorf("declare qos failed: %w", err)
 	}
-	return chanManager, nil
+	return &Channel{chanManager}, nil
 }
