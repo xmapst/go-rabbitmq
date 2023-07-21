@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	amqp "github.com/rabbitmq/amqp091-go"
+
 	"github.com/xmapst/go-rabbitmq/internal/manager/channel"
 )
 

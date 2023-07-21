@@ -5,6 +5,7 @@ import (
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
+
 	"github.com/xmapst/go-rabbitmq/internal/dispatcher"
 	"github.com/xmapst/go-rabbitmq/internal/logger"
 )
