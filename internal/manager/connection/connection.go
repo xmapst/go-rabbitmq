@@ -38,7 +38,7 @@ func New(url string, conf amqp.Config, log logger.Logger, reconnectInterval time
 		ReconnectInterval:    reconnectInterval,
 		reconnectionCount:    0,
 		reconnectionCountMux: &sync.Mutex{},
-		dispatcher:           dispatcher.NewDispatcher(),
+		dispatcher:           dispatcher.New(),
 	}
 	go connManager.startNotifyClose()
 	return &connManager, nil
@@ -50,12 +50,17 @@ func (m *Manager) Close() error {
 	m.connectionMux.Lock()
 	defer m.connectionMux.Unlock()
 
-	return m.connection.Close()
+	err := m.connection.Close()
+	if err != nil {
+		m.logger.Errorf("close err: %v", err)
+		return err
+	}
+	return nil
 }
 
 // NotifyReconnect adds a new subscriber that will receive error messages whenever
 // the connection manager has successfully reconnected to the server
-func (m *Manager) NotifyReconnect() (<-chan error, chan<- struct{}, <-chan error) {
+func (m *Manager) NotifyReconnect() (<-chan error, chan<- struct{}) {
 	return m.dispatcher.AddSubscriber()
 }
 
@@ -80,11 +85,11 @@ func (m *Manager) startNotifyClose() {
 	err := <-notifyCloseChan
 	if err != nil {
 		m.logger.Errorf("attempting to reconnect to amqp server after connection close with error: %v", err)
-		_ = m.dispatcher.DispatchLooseConnection(err)
 		m.reconnectLoop()
 		m.logger.Warnf("successfully reconnected to amqp server")
-		_ = m.dispatcher.Dispatch(err)
-		_ = m.dispatcher.DispatchLooseConnection(nil)
+		if _err := m.dispatcher.Dispatch(err); _err != nil {
+			m.logger.Warnf("connection dispatch err: %v", err)
+		}
 	}
 	if err == nil {
 		m.logger.Infof("amqp connection closed gracefully")

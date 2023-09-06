@@ -6,7 +6,7 @@ import (
 )
 
 func TestNewDispatcher(t *testing.T) {
-	d := NewDispatcher()
+	d := New()
 	if d.subscribers == nil {
 		t.Error("Dispatcher subscribers is nil")
 	}
@@ -16,7 +16,7 @@ func TestNewDispatcher(t *testing.T) {
 }
 
 func TestAddSubscriber(t *testing.T) {
-	d := NewDispatcher()
+	d := New()
 	d.AddSubscriber()
 	if len(d.subscribers) != 1 {
 		t.Error("Dispatcher subscribers length is not 1")
@@ -24,8 +24,8 @@ func TestAddSubscriber(t *testing.T) {
 }
 
 func TestCloseSubscriber(t *testing.T) {
-	d := NewDispatcher()
-	_, closeCh, _ := d.AddSubscriber()
+	d := New()
+	_, closeCh := d.AddSubscriber()
 	close(closeCh)
 	time.Sleep(time.Millisecond)
 	if len(d.subscribers) != 0 {

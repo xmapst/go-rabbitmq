@@ -15,13 +15,12 @@ type Dispatcher struct {
 }
 
 type dispatchSubscriber struct {
-	notifyClosedChan        chan error
 	notifyCancelOrCloseChan chan error
 	closeCh                 <-chan struct{}
 }
 
-// NewDispatcher -
-func NewDispatcher() *Dispatcher {
+// New -
+func New() *Dispatcher {
 	return &Dispatcher{
 		subscribers:    make(map[int]dispatchSubscriber),
 		subscribersMux: &sync.Mutex{},
@@ -42,31 +41,17 @@ func (d *Dispatcher) Dispatch(err error) error {
 	return nil
 }
 
-// DispatchLooseConnection dispatching that connection to RabbitMQ is loosed
-func (d *Dispatcher) DispatchLooseConnection(err error) error {
-	d.subscribersMux.Lock()
-	defer d.subscribersMux.Unlock()
-
-	for _, subscriber := range d.subscribers {
-		subscriber.notifyClosedChan <- err
-	}
-
-	return nil
-}
-
 // AddSubscriber -
-func (d *Dispatcher) AddSubscriber() (<-chan error, chan<- struct{}, <-chan error) {
+func (d *Dispatcher) AddSubscriber() (<-chan error, chan<- struct{}) {
 	const maxRand = math.MaxInt
 	const minRand = 0
 	id := rand.Intn(maxRand-minRand) + minRand
 
 	closeCh := make(chan struct{})
 	notifyCancelOrCloseChan := make(chan error)
-	notifyClosedChan := make(chan error)
 
 	d.subscribersMux.Lock()
 	d.subscribers[id] = dispatchSubscriber{
-		notifyClosedChan:        notifyClosedChan,
 		notifyCancelOrCloseChan: notifyCancelOrCloseChan,
 		closeCh:                 closeCh,
 	}
@@ -83,5 +68,5 @@ func (d *Dispatcher) AddSubscriber() (<-chan error, chan<- struct{}, <-chan erro
 		close(sub.notifyCancelOrCloseChan)
 		delete(d.subscribers, id)
 	}(id)
-	return notifyCancelOrCloseChan, closeCh, notifyClosedChan
+	return notifyCancelOrCloseChan, closeCh
 }
