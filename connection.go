@@ -24,13 +24,17 @@ type Config amqp.Config
 
 // NewConn creates a new connection manager
 func NewConn(url string, optionFuncs ...func(*ConnectionOptions)) (*Conn, error) {
+	return NewClusterConn([]string{url}, optionFuncs...)
+}
+
+func NewClusterConn(urls []string, optionFuncs ...func(*ConnectionOptions)) (*Conn, error) {
 	defaultOptions := getDefaultConnectionOptions()
 	options := &defaultOptions
 	for _, optionFunc := range optionFuncs {
 		optionFunc(options)
 	}
 
-	manager, err := connection.New(url, amqp.Config(options.Config), options.Logger, options.ReconnectInterval)
+	manager, err := connection.New(urls, amqp.Config(options.Config), options.Logger, options.ReconnectInterval)
 	if err != nil {
 		return nil, err
 	}

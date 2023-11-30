@@ -1,6 +1,7 @@
 package connection
 
 import (
+	"errors"
 	"sync"
 	"time"
 
@@ -13,7 +14,8 @@ import (
 // Manager -
 type Manager struct {
 	logger               logger.Logger
-	url                  string
+	urls                 []string
+	lastSeq              int
 	connection           *amqp.Connection
 	amqpConfig           amqp.Config
 	connectionMux        *sync.RWMutex
@@ -24,14 +26,17 @@ type Manager struct {
 }
 
 // New creates a new connection manager
-func New(url string, conf amqp.Config, log logger.Logger, reconnectInterval time.Duration) (*Manager, error) {
-	conn, err := amqp.DialConfig(url, conf)
+func New(urls []string, conf amqp.Config, log logger.Logger, reconnectInterval time.Duration) (*Manager, error) {
+	if urls == nil {
+		return nil, errors.New("amqp server slice is nil")
+	}
+	conn, err := amqp.DialConfig(urls[0], conf)
 	if err != nil {
 		return nil, err
 	}
 	connManager := Manager{
 		logger:               log,
-		url:                  url,
+		urls:                 urls,
 		connection:           conn,
 		amqpConfig:           conf,
 		connectionMux:        &sync.RWMutex{},
@@ -129,7 +134,8 @@ func (m *Manager) reconnectLoop() {
 func (m *Manager) reconnect() error {
 	m.connectionMux.Lock()
 	defer m.connectionMux.Unlock()
-	newConn, err := amqp.DialConfig(m.url, m.amqpConfig)
+	m.lastSeq = m.next()
+	newConn, err := amqp.DialConfig(m.urls[m.lastSeq], m.amqpConfig)
 	if err != nil {
 		return err
 	}
@@ -140,4 +146,16 @@ func (m *Manager) reconnect() error {
 
 	m.connection = newConn
 	return nil
+}
+
+// Next element index of slice
+func (m *Manager) next() int {
+	length := len(m.urls)
+	if length == 0 || m.lastSeq == length-1 {
+		return 0
+	} else if m.lastSeq < length-1 {
+		return m.lastSeq + 1
+	} else {
+		return -1
+	}
 }
