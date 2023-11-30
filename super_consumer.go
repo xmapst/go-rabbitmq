@@ -5,56 +5,32 @@ import (
 	"fmt"
 	"sync"
 
-	amqp "github.com/rabbitmq/amqp091-go"
+	"github.com/rabbitmq/amqp091-go"
 
 	"github.com/xmapst/go-rabbitmq/internal/manager/channel"
 )
 
-// Action is an action that occurs after processed this delivery
-type Action int
-
-// Handler defines the handler of each Delivery and return Action
-type Handler func(d Delivery) (action Action)
-
-const (
-	// Ack default ack this msg after you have successfully processed this delivery.
-	Ack Action = iota
-	// NackDiscard the message will be dropped or delivered to a server configured dead-letter queue.
-	NackDiscard
-	// NackRequeue deliver this message to a different consumer.
-	NackRequeue
-	// Message acknowledgement is left to the user using the msg.Ack() method
-	Manual
-)
-
-// Consumer allows you to create and connect to queues for data consumption.
-type Consumer struct {
+// SuperConsumer with multiple bindings from multiple exchanges
+type SuperConsumer struct {
 	chanManager                *channel.Manager
 	reconnectErrCh             <-chan error
 	closeConnectionToManagerCh chan<- struct{}
-	options                    ConsumerOptions
+	options                    SuperConsumerOptions
 
 	isClosedMux *sync.RWMutex
 	isClosed    bool
 }
 
-// Delivery captures the fields for a previously delivered message resident in
-// a queue to be delivered by the server to a consumer from Channel.Consume or
-// Channel.Get.
-type Delivery struct {
-	amqp.Delivery
-}
-
-// NewConsumer returns a new Consumer connected to the given rabbitmq server
+// NewSuperConsumer returns a new Consumer connected to the given rabbitmq server
 // it also starts consuming on the given connection with automatic reconnection handling
 // Do not reuse the returned consumer for anything other than to close it
-func NewConsumer(
+func NewSuperConsumer(
 	conn *Conn,
 	handler Handler,
 	queue string,
-	optionFuncs ...func(*ConsumerOptions),
-) (*Consumer, error) {
-	defaultOptions := getDefaultConsumerOptions(queue)
+	optionFuncs ...func(*SuperConsumerOptions),
+) (*SuperConsumer, error) {
+	defaultOptions := getDefaultSuperConsumerOptions(queue)
 	options := &defaultOptions
 	for _, optionFunc := range optionFuncs {
 		optionFunc(options)
@@ -70,7 +46,7 @@ func NewConsumer(
 	}
 	reconnectErrCh, closeCh := chanManager.NotifyReconnect()
 
-	consumer := &Consumer{
+	consumer := &SuperConsumer{
 		chanManager:                chanManager,
 		reconnectErrCh:             reconnectErrCh,
 		closeConnectionToManagerCh: closeCh,
@@ -109,7 +85,7 @@ func NewConsumer(
 // It does not close the connection manager, just the subscription
 // to the connection manager and the consuming goroutines.
 // Only call once.
-func (consumer *Consumer) Close() {
+func (consumer *SuperConsumer) Close() {
 	consumer.isClosedMux.Lock()
 	defer consumer.isClosedMux.Unlock()
 	consumer.isClosed = true
@@ -129,9 +105,9 @@ func (consumer *Consumer) Close() {
 // startGoroutines declares the queue if it doesn't exist,
 // binds the queue to the routing key(s), and starts the goroutines
 // that will consume from the queue
-func (consumer *Consumer) startGoroutines(
+func (consumer *SuperConsumer) startGoroutines(
 	handler Handler,
-	options ConsumerOptions,
+	options SuperConsumerOptions,
 ) error {
 	err := consumer.chanManager.QosSafe(
 		options.QOSPrefetch,
@@ -141,7 +117,9 @@ func (consumer *Consumer) startGoroutines(
 	if err != nil {
 		return fmt.Errorf("declare qos failed: %w", err)
 	}
-	err = declareExchange(consumer.chanManager, options.ExchangeOptions)
+	for _, exchangeOption := range options.ExchangeOptionsSlice {
+		err = declareSuperExchange(consumer.chanManager, exchangeOption)
+	}
 	if err != nil {
 		return fmt.Errorf("declare exchange failed: %w", err)
 	}
@@ -149,7 +127,7 @@ func (consumer *Consumer) startGoroutines(
 	if err != nil {
 		return fmt.Errorf("declare queue failed: %w", err)
 	}
-	err = declareBindings(consumer.chanManager, options)
+	err = declareSuperBindings(consumer.chanManager, options)
 	if err != nil {
 		return fmt.Errorf("declare bindings failed: %w", err)
 	}
@@ -168,19 +146,19 @@ func (consumer *Consumer) startGoroutines(
 	}
 
 	for i := 0; i < options.Concurrency; i++ {
-		go handlerGoroutine(consumer, msgs, options, handler)
+		go handlerSuperGoroutine(consumer, msgs, options, handler)
 	}
 	consumer.options.Logger.Infof("Processing messages on %v goroutines", options.Concurrency)
 	return nil
 }
 
-func (consumer *Consumer) getIsClosed() bool {
+func (consumer *SuperConsumer) getIsClosed() bool {
 	consumer.isClosedMux.RLock()
 	defer consumer.isClosedMux.RUnlock()
 	return consumer.isClosed
 }
 
-func handlerGoroutine(consumer *Consumer, msgs <-chan amqp.Delivery, consumeOptions ConsumerOptions, handler Handler) {
+func handlerSuperGoroutine(consumer *SuperConsumer, msgs <-chan amqp091.Delivery, consumeOptions SuperConsumerOptions, handler Handler) {
 	for msg := range msgs {
 		if consumer.getIsClosed() {
 			break

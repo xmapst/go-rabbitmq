@@ -151,6 +151,40 @@ func declareExchange(chanManager *channel.Manager, options ExchangeOptions) erro
 	return nil
 }
 
+func declareSuperExchange(chanManager *channel.Manager, options SuperExchangeOptions) error {
+	if !options.Declare {
+		return nil
+	}
+	if options.Passive {
+		err := chanManager.ExchangeDeclarePassiveSafe(
+			options.Name,
+			options.Kind,
+			options.Durable,
+			options.AutoDelete,
+			options.Internal,
+			options.NoWait,
+			tableToAMQPTable(options.Args),
+		)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+	err := chanManager.ExchangeDeclareSafe(
+		options.Name,
+		options.Kind,
+		options.Durable,
+		options.AutoDelete,
+		options.Internal,
+		options.NoWait,
+		tableToAMQPTable(options.Args),
+	)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func declareBindings(chanManager *channel.Manager, options ConsumerOptions) error {
 	for _, binding := range options.Bindings {
 		if !binding.Declare {
@@ -167,5 +201,27 @@ func declareBindings(chanManager *channel.Manager, options ConsumerOptions) erro
 			return err
 		}
 	}
+	return nil
+}
+
+func declareSuperBindings(chanManager *channel.Manager, options SuperConsumerOptions) error {
+	for _, exchangeOptions := range options.ExchangeOptionsSlice {
+		for _, binding := range exchangeOptions.Bindings {
+			if !binding.Declare {
+				continue
+			}
+			err := chanManager.QueueBindSafe(
+				options.QueueOptions.Name,
+				binding.RoutingKey,
+				exchangeOptions.Name,
+				binding.NoWait,
+				tableToAMQPTable(binding.Args),
+			)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
 	return nil
 }
