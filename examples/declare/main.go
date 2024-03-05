@@ -23,25 +23,22 @@ func main() {
 	defer declare.Close()
 
 	// declare dead-letter queue
-	err = declare.Queue(
-		"re_my_queue",
-		rabbitmq.WithConsumerOptionsRoutingKey("my_routing_key"),
-		rabbitmq.WithConsumerOptionsExchangeName("events"),
-		rabbitmq.WithConsumerOptionsExchangeDeclare,
-	)
+	err = declare.Queue(rabbitmq.QueueOptions{
+		Name:    "re_my_queue",
+		Declare: true,
+		Args: map[string]interface{}{
+			"x-dead-letter-exchange":    "events",
+			"x-dead-letter-routing-key": "my_routing_key",
+		},
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
-	err = declare.BindQueues([]rabbitmq.QueueBinding{
+	err = declare.BindQueues([]rabbitmq.Binding{
 		{
-			Exchange:   "events",
-			RoutingKey: "my_routing_key",
-			Queue:      "re_my_queue",
-			NoWait:     false,
-			Args: map[string]interface{}{
-				"x-dead-letter-exchange":    "events",
-				"x-dead-letter-routing-key": "my_routing_key",
-			},
+			Source:      "events",
+			RoutingKey:  "my_routing_key",
+			Destination: "re_my_queue",
 		},
 	})
 	if err != nil {

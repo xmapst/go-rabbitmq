@@ -31,27 +31,15 @@ func (d *Declarator) Close() {
 	_ = d.chanManager.Close()
 }
 
-func (d *Declarator) Exchange(optionFuncs ...func(*PublisherOptions)) error {
-	defaultOptions := getDefaultPublisherOptions()
-	options := &defaultOptions
-	for _, optionFunc := range optionFuncs {
-		optionFunc(options)
-	}
-
-	return declareExchange(d.chanManager, options.ExchangeOptions)
+func (d *Declarator) Exchange(options ExchangeOptions) error {
+	return declareExchange(d.chanManager, options)
 }
 
-func (d *Declarator) Queue(queue string, optionFuncs ...func(*ConsumerOptions)) error {
-	defaultOptions := getDefaultConsumerOptions(queue)
-	options := &defaultOptions
-	for _, optionFunc := range optionFuncs {
-		optionFunc(options)
-	}
-
-	return declareQueue(d.chanManager, options.QueueOptions)
+func (d *Declarator) Queue(options QueueOptions) error {
+	return declareQueue(d.chanManager, options)
 }
 
-func (d *Declarator) BindExchanges(bindings []ExchangeBinding) error {
+func (d *Declarator) BindExchanges(bindings []Binding) error {
 	for _, binding := range bindings {
 		err := d.chanManager.ExchangeBindSafe(
 			binding.Destination,
@@ -69,12 +57,12 @@ func (d *Declarator) BindExchanges(bindings []ExchangeBinding) error {
 	return nil
 }
 
-func (d *Declarator) BindQueues(bindings []QueueBinding) error {
+func (d *Declarator) BindQueues(bindings []Binding) error {
 	for _, binding := range bindings {
 		err := d.chanManager.QueueBindSafe(
-			binding.Queue,
+			binding.Destination,
 			binding.RoutingKey,
-			binding.Exchange,
+			binding.Source,
 			binding.NoWait,
 			tableToAMQPTable(binding.Args),
 		)
@@ -152,19 +140,21 @@ func declareExchange(chanManager *channel.Manager, options ExchangeOptions) erro
 }
 
 func declareBindings(chanManager *channel.Manager, options ConsumerOptions) error {
-	for _, binding := range options.Bindings {
-		if !binding.Declare {
-			continue
-		}
-		err := chanManager.QueueBindSafe(
-			options.QueueOptions.Name,
-			binding.RoutingKey,
-			options.ExchangeOptions.Name,
-			binding.NoWait,
-			tableToAMQPTable(binding.Args),
-		)
-		if err != nil {
-			return err
+	for _, exchangeOption := range options.ExchangeOptions {
+		for _, binding := range exchangeOption.Bindings {
+			if !binding.Declare {
+				continue
+			}
+			err := chanManager.QueueBindSafe(
+				options.QueueOptions.Name,
+				binding.RoutingKey,
+				exchangeOption.Name,
+				binding.NoWait,
+				tableToAMQPTable(binding.Args),
+			)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil

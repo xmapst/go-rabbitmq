@@ -105,16 +105,17 @@ func (m *Manager) ExchangeDeclareSafe(
 	)
 }
 
+// ExchangeBindSafe safely wraps the (*amqp.Channel).ExchangeBind method
 func (m *Manager) ExchangeBindSafe(
-	destination, key, source string, noWait bool, args amqp.Table,
+	name string, key string, exchange string, noWait bool, args amqp.Table,
 ) error {
 	m.channelMux.RLock()
 	defer m.channelMux.RUnlock()
 
 	return m.channel.ExchangeBind(
-		destination,
+		name,
 		key,
-		source,
+		exchange,
 		noWait,
 		args,
 	)

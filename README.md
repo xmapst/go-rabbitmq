@@ -1,6 +1,6 @@
 # go-rabbitmq
 
-A wrapper of streadway/amqp that provides reconnection logic and sane defaults
+A wrapper of [rabbitmq/amqp091-go](https://github.com/rabbitmq/amqp091-go) that provides reconnection logic and sane defaults. Hit the project with a star if you find it useful ⭐
 
 Wrapper of [rabbitmq/amqp091-go](https://github.com/rabbitmq/amqp091-go) that provides reconnection logic and sane defaults. Hit the project with a star if you find it useful ⭐
 
@@ -44,11 +44,6 @@ defer conn.Close()
 
 consumer, err := rabbitmq.NewConsumer(
 	conn,
-	func(d rabbitmq.Delivery) rabbitmq.Action {
-		log.Printf("consumed: %v", string(d.Body))
-		// rabbitmq.Ack, rabbitmq.NackDiscard, rabbitmq.NackRequeue
-		return rabbitmq.Ack
-	},
 	"my_queue",
 	rabbitmq.WithConsumerOptionsRoutingKey("my_routing_key"),
 	rabbitmq.WithConsumerOptionsExchangeName("events"),
@@ -58,6 +53,15 @@ if err != nil {
 	log.Fatal(err)
 }
 defer consumer.Close()
+
+err = consumer.Run(func(d rabbitmq.Delivery) rabbitmq.Action {
+	log.Printf("consumed: %v", string(d.Body))
+	// rabbitmq.Ack, rabbitmq.NackDiscard, rabbitmq.NackRequeue
+	return rabbitmq.Ack
+})
+if err != nil {
+	log.Fatal(err)
+}
 ```
 
 ## 🚀 Quick Start Publisher
@@ -103,7 +107,7 @@ See the [examples](examples) directory for more ideas.
 
 * By default, queues are declared if they didn't already exist by new consumers
 * By default, routing-key bindings are declared by consumers if you're using `WithConsumerOptionsRoutingKey`
-* By default, exchanges are *not* declared by publishers or consumers if they didn't already exist, hence `WithPublisherOptionsExchangeDeclare` and `WithConsumerOptionsExchangeDeclare`.
+* By default, exchanges are *not* declared by publishers or consumers if they don't already exist, hence `WithPublisherOptionsExchangeDeclare` and `WithConsumerOptionsExchangeDeclare`.
 
 Read up on all the options in the GoDoc, there are quite a few of them. I try to pick sane and simple defaults.
 

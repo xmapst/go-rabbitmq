@@ -10,7 +10,6 @@ func (m *Manager) NotifyBlockedSafe(
 ) chan amqp.Blocking {
 	m.connectionMux.RLock()
 	defer m.connectionMux.RUnlock()
-
 	return m.connection.NotifyBlocked(
 		receiver,
 	)

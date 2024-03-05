@@ -50,14 +50,13 @@ type Delivery struct {
 // Do not reuse the returned consumer for anything other than to close it
 func NewConsumer(
 	conn *Conn,
-	handler Handler,
 	queue string,
 	optionFuncs ...func(*ConsumerOptions),
 ) (*Consumer, error) {
 	defaultOptions := getDefaultConsumerOptions(queue)
-	options := &defaultOptions
+	options := defaultOptions
 	for _, optionFunc := range optionFuncs {
-		optionFunc(options)
+		optionFunc(&options)
 	}
 
 	if conn.connManager == nil {
@@ -74,35 +73,37 @@ func NewConsumer(
 		chanManager:                chanManager,
 		reconnectErrCh:             reconnectErrCh,
 		closeConnectionToManagerCh: closeCh,
-		options:                    *options,
+		options:                    options,
 		isClosedMux:                &sync.RWMutex{},
 		isClosed:                   false,
 	}
 
-	err = consumer.startGoroutines(
+	return consumer, nil
+}
+
+// Run starts consuming with automatic reconnection handling. Do not reuse the
+// consumer for anything other than to close it.
+func (consumer *Consumer) Run(handler Handler) error {
+	err := consumer.startGoroutines(
 		handler,
-		*options,
+		consumer.options,
 	)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	go func() {
-		for err := range consumer.reconnectErrCh {
-			consumer.options.Logger.Infof("successful consumer recovery from: %v", err)
-			err = consumer.startGoroutines(
-				handler,
-				*options,
-			)
-			if err != nil {
-				consumer.options.Logger.Errorf("error restarting consumer goroutines after cancel or close: %v", err)
-				consumer.options.Logger.Errorf("consumer closing, unable to recover")
-				return
-			}
+	for err = range consumer.reconnectErrCh {
+		consumer.options.Logger.Infof("successful consumer recovery from: %v", err)
+		err = consumer.startGoroutines(
+			handler,
+			consumer.options,
+		)
+		if err != nil {
+			return fmt.Errorf("error restarting consumer goroutines after cancel or close: %w", err)
 		}
-	}()
+	}
 
-	return consumer, nil
+	return nil
 }
 
 // Close cleans up resources and closes the consumer.
@@ -141,9 +142,12 @@ func (consumer *Consumer) startGoroutines(
 	if err != nil {
 		return fmt.Errorf("declare qos failed: %w", err)
 	}
-	err = declareExchange(consumer.chanManager, options.ExchangeOptions)
-	if err != nil {
-		return fmt.Errorf("declare exchange failed: %w", err)
+
+	for _, exchangeOption := range options.ExchangeOptions {
+		err = declareExchange(consumer.chanManager, exchangeOption)
+		if err != nil {
+			return fmt.Errorf("declare exchange failed: %w", err)
+		}
 	}
 	err = declareQueue(consumer.chanManager, options.QueueOptions)
 	if err != nil {
@@ -207,6 +211,7 @@ func handlerGoroutine(consumer *Consumer, msgs <-chan amqp.Delivery, consumeOpti
 			if err != nil {
 				consumer.options.Logger.Errorf("can't nack message: %v", err)
 			}
+		default:
 		}
 	}
 	consumer.options.Logger.Infof("rabbit consumer goroutine closed")

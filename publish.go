@@ -112,9 +112,9 @@ func NewPublisher(conn *Conn, optionFuncs ...func(*PublisherOptions)) (*Publishe
 	}
 
 	go func() {
-		for err := range publisher.reconnectErrCh {
+		for err = range publisher.reconnectErrCh {
 			publisher.options.Logger.Infof("successful publisher recovery from: %v", err)
-			err := publisher.startup()
+			err = publisher.startup()
 			if err != nil {
 				publisher.options.Logger.Errorf("error on startup for publisher after cancel or close: %v", err)
 				publisher.options.Logger.Errorf("publisher closing, unable to recover")
@@ -176,14 +176,6 @@ func (publisher *Publisher) PublishWithContext(
 		options.DeliveryMode = Transient
 	}
 
-	if options.Exchange == "" && publisher.options.ExchangeOptions.Name != "" {
-		options.Exchange = publisher.options.ExchangeOptions.Name
-	}
-
-	if options.Exchange == "" {
-		return fmt.Errorf("publishing to empty exchange")
-	}
-
 	for _, routingKey := range routingKeys {
 		message := amqp.Publishing{}
 		message.ContentType = options.ContentType
@@ -217,10 +209,11 @@ func (publisher *Publisher) PublishWithContext(
 	return nil
 }
 
-// PublishWithContext publishes the provided data to the given routing keys over the connection.
+// PublishWithDeferredConfirmWithContext publishes the provided data to the given routing keys over the connection.
 // if the publisher is in confirm mode (which can be either done by calling `NotifyPublish` with a custom handler
 // or by using `WithPublisherOptionsConfirm`) a publisher confirmation is returned.
 // This confirmation can be used to check if the message was actually published or wait for this to happen.
+// If the publisher is not in confirm mode, the returned confirmation will always be nil.
 func (publisher *Publisher) PublishWithDeferredConfirmWithContext(
 	ctx context.Context,
 	data []byte,
@@ -245,14 +238,6 @@ func (publisher *Publisher) PublishWithDeferredConfirmWithContext(
 	}
 	if options.DeliveryMode == 0 {
 		options.DeliveryMode = Transient
-	}
-
-	if options.Exchange == "" && publisher.options.ExchangeOptions.Name != "" {
-		options.Exchange = publisher.options.ExchangeOptions.Name
-	}
-
-	if options.Exchange == "" {
-		return nil, fmt.Errorf("publishing to empty exchange")
 	}
 
 	var deferredConfirmations []*amqp.DeferredConfirmation
@@ -359,7 +344,7 @@ func (publisher *Publisher) startPublishHandler() {
 		return
 	}
 	publisher.handlerMux.Unlock()
-	_ = publisher.chanManager.ConfirmSafe(false)
+	publisher.chanManager.ConfirmSafe(false)
 
 	go func() {
 		confirmationCh := publisher.chanManager.NotifyPublishSafe(make(chan amqp.Confirmation, 1))

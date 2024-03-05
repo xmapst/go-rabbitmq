@@ -55,6 +55,7 @@ func (m *Manager) Close() error {
 		m.logger.Errorf("close err: %v", err)
 		return err
 	}
+	m.logger.Infof("amqp connection closed gracefully")
 	return nil
 }
 
