@@ -2,8 +2,6 @@
 
 A wrapper of [rabbitmq/amqp091-go](https://github.com/rabbitmq/amqp091-go) that provides reconnection logic and sane defaults. Hit the project with a star if you find it useful ⭐
 
-Wrapper of [rabbitmq/amqp091-go](https://github.com/rabbitmq/amqp091-go) that provides reconnection logic and sane defaults. Hit the project with a star if you find it useful ⭐
-
 [![](https://godoc.org/github.com/xmapst/go-rabbitmq?status.svg)](https://godoc.org/github.com/xmapst/go-rabbitmq)![Deploy](https://github.com/xmapst/go-rabbitmq/workflows/Tests/badge.svg)
 
 ## Motivation
