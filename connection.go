@@ -43,7 +43,7 @@ func (r *StaticResolver) Resolve() ([]string, error) {
 }
 
 func NewStaticResolver(urls []string, shuffle bool) *StaticResolver {
-	return &StaticResolver{urls: urls}
+	return &StaticResolver{urls: urls, shuffe: shuffle}
 }
 
 // NewConn creates a new connection manager
