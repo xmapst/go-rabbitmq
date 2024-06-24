@@ -48,13 +48,13 @@ type Publisher struct {
 	reconnectErrCh             <-chan error
 	closeConnectionToManagerCh chan<- struct{}
 
-	disablePublishDueToFlow    bool
-	disablePublishDueToFlowMux *sync.RWMutex
+	disablePublishDueToFlow   bool
+	disablePublishDueToFlowMu *sync.RWMutex
 
-	disablePublishDueToBlocked    bool
-	disablePublishDueToBlockedMux *sync.RWMutex
+	disablePublishDueToBlocked   bool
+	disablePublishDueToBlockedMu *sync.RWMutex
 
-	handlerMux           *sync.Mutex
+	handlerMu            *sync.Mutex
 	notifyReturnHandler  func(r Return)
 	notifyPublishHandler func(p Confirmation)
 
@@ -78,27 +78,24 @@ func NewPublisher(conn *Conn, optionFuncs ...func(*PublisherOptions)) (*Publishe
 	if conn.connManager == nil {
 		return nil, errors.New("connection manager can't be nil")
 	}
-
-	chanManager, err := channel.New(conn.connManager, options.Logger, conn.connManager.ReconnectInterval)
+	publisher := &Publisher{
+		connManager:                  conn.connManager,
+		disablePublishDueToFlow:      false,
+		disablePublishDueToFlowMu:    &sync.RWMutex{},
+		disablePublishDueToBlocked:   false,
+		disablePublishDueToBlockedMu: &sync.RWMutex{},
+		handlerMu:                    &sync.Mutex{},
+		notifyReturnHandler:          nil,
+		notifyPublishHandler:         nil,
+		options:                      *options,
+	}
+	var err error
+	publisher.chanManager, err = channel.New(conn.connManager, options.Logger, conn.connManager.ReconnectInterval)
 	if err != nil {
 		return nil, err
 	}
 
-	reconnectErrCh, closeCh := chanManager.NotifyReconnect()
-	publisher := &Publisher{
-		chanManager:                   chanManager,
-		connManager:                   conn.connManager,
-		reconnectErrCh:                reconnectErrCh,
-		closeConnectionToManagerCh:    closeCh,
-		disablePublishDueToFlow:       false,
-		disablePublishDueToFlowMux:    &sync.RWMutex{},
-		disablePublishDueToBlocked:    false,
-		disablePublishDueToBlockedMux: &sync.RWMutex{},
-		handlerMux:                    &sync.Mutex{},
-		notifyReturnHandler:           nil,
-		notifyPublishHandler:          nil,
-		options:                       *options,
-	}
+	publisher.reconnectErrCh, publisher.closeConnectionToManagerCh = publisher.chanManager.NotifyReconnect()
 
 	err = publisher.startup()
 	if err != nil {
@@ -156,14 +153,14 @@ func (publisher *Publisher) PublishWithContext(
 	routingKeys []string,
 	optionFuncs ...func(*PublishOptions),
 ) error {
-	publisher.disablePublishDueToFlowMux.RLock()
-	defer publisher.disablePublishDueToFlowMux.RUnlock()
+	publisher.disablePublishDueToFlowMu.RLock()
+	defer publisher.disablePublishDueToFlowMu.RUnlock()
 	if publisher.disablePublishDueToFlow {
 		return fmt.Errorf("publishing blocked due to high flow on the server")
 	}
 
-	publisher.disablePublishDueToBlockedMux.RLock()
-	defer publisher.disablePublishDueToBlockedMux.RUnlock()
+	publisher.disablePublishDueToBlockedMu.RLock()
+	defer publisher.disablePublishDueToBlockedMu.RUnlock()
 	if publisher.disablePublishDueToBlocked {
 		return fmt.Errorf("publishing blocked due to TCP block on the server")
 	}
@@ -220,14 +217,14 @@ func (publisher *Publisher) PublishWithDeferredConfirmWithContext(
 	routingKeys []string,
 	optionFuncs ...func(*PublishOptions),
 ) (PublisherConfirmation, error) {
-	publisher.disablePublishDueToFlowMux.RLock()
-	defer publisher.disablePublishDueToFlowMux.RUnlock()
+	publisher.disablePublishDueToFlowMu.RLock()
+	defer publisher.disablePublishDueToFlowMu.RUnlock()
 	if publisher.disablePublishDueToFlow {
 		return nil, fmt.Errorf("publishing blocked due to high flow on the server")
 	}
 
-	publisher.disablePublishDueToBlockedMux.RLock()
-	defer publisher.disablePublishDueToBlockedMux.RUnlock()
+	publisher.disablePublishDueToBlockedMu.RLock()
+	defer publisher.disablePublishDueToBlockedMu.RUnlock()
 	if publisher.disablePublishDueToBlocked {
 		return nil, fmt.Errorf("publishing blocked due to TCP block on the server")
 	}
@@ -297,10 +294,10 @@ func (publisher *Publisher) Close() {
 // These notifications are shared across an entire connection, so if you're creating multiple
 // publishers on the same connection keep that in mind
 func (publisher *Publisher) NotifyReturn(handler func(r Return)) {
-	publisher.handlerMux.Lock()
+	publisher.handlerMu.Lock()
 	start := publisher.notifyReturnHandler == nil
 	publisher.notifyReturnHandler = handler
-	publisher.handlerMux.Unlock()
+	publisher.handlerMu.Unlock()
 
 	if start {
 		publisher.startReturnHandler()
@@ -311,10 +308,10 @@ func (publisher *Publisher) NotifyReturn(handler func(r Return)) {
 // These notifications are shared across an entire connection, so if you're creating multiple
 // publishers on the same connection keep that in mind
 func (publisher *Publisher) NotifyPublish(handler func(p Confirmation)) {
-	publisher.handlerMux.Lock()
+	publisher.handlerMu.Lock()
 	shouldStart := publisher.notifyPublishHandler == nil
 	publisher.notifyPublishHandler = handler
-	publisher.handlerMux.Unlock()
+	publisher.handlerMu.Unlock()
 
 	if shouldStart {
 		publisher.startPublishHandler()
@@ -322,12 +319,12 @@ func (publisher *Publisher) NotifyPublish(handler func(p Confirmation)) {
 }
 
 func (publisher *Publisher) startReturnHandler() {
-	publisher.handlerMux.Lock()
+	publisher.handlerMu.Lock()
 	if publisher.notifyReturnHandler == nil {
-		publisher.handlerMux.Unlock()
+		publisher.handlerMu.Unlock()
 		return
 	}
-	publisher.handlerMux.Unlock()
+	publisher.handlerMu.Unlock()
 
 	go func() {
 		returns := publisher.chanManager.NotifyReturnSafe(make(chan amqp.Return, 1))
@@ -338,13 +335,13 @@ func (publisher *Publisher) startReturnHandler() {
 }
 
 func (publisher *Publisher) startPublishHandler() {
-	publisher.handlerMux.Lock()
+	publisher.handlerMu.Lock()
 	if publisher.notifyPublishHandler == nil {
-		publisher.handlerMux.Unlock()
+		publisher.handlerMu.Unlock()
 		return
 	}
-	publisher.handlerMux.Unlock()
-	publisher.chanManager.ConfirmSafe(false)
+	publisher.handlerMu.Unlock()
+	_ = publisher.chanManager.ConfirmSafe(false)
 
 	go func() {
 		confirmationCh := publisher.chanManager.NotifyPublishSafe(make(chan amqp.Confirmation, 1))

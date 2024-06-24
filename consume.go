@@ -1,6 +1,7 @@
 package rabbitmq
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -33,9 +34,10 @@ type Consumer struct {
 	reconnectErrCh             <-chan error
 	closeConnectionToManagerCh chan<- struct{}
 	options                    ConsumerOptions
+	handlerMu                  *sync.RWMutex
 
-	isClosedMux *sync.RWMutex
-	isClosed    bool
+	isClosedMu *sync.RWMutex
+	isClosed   bool
 }
 
 // Delivery captures the fields for a previously delivered message resident in
@@ -63,20 +65,17 @@ func NewConsumer(
 		return nil, errors.New("connection manager can't be nil")
 	}
 
-	chanManager, err := channel.New(conn.connManager, options.Logger, conn.connManager.ReconnectInterval)
+	consumer := &Consumer{
+		options:    options,
+		isClosedMu: &sync.RWMutex{},
+		isClosed:   false,
+	}
+	var err error
+	consumer.chanManager, err = channel.New(conn.connManager, options.Logger, conn.connManager.ReconnectInterval)
 	if err != nil {
 		return nil, err
 	}
-	reconnectErrCh, closeCh := chanManager.NotifyReconnect()
-
-	consumer := &Consumer{
-		chanManager:                chanManager,
-		reconnectErrCh:             reconnectErrCh,
-		closeConnectionToManagerCh: closeCh,
-		options:                    options,
-		isClosedMux:                &sync.RWMutex{},
-		isClosed:                   false,
-	}
+	consumer.reconnectErrCh, consumer.closeConnectionToManagerCh = consumer.chanManager.NotifyReconnect()
 
 	return consumer, nil
 }
@@ -90,6 +89,14 @@ func (consumer *Consumer) Run(handler Handler) error {
 	)
 	if err != nil {
 		return err
+	}
+
+	handler = func(d Delivery) (action Action) {
+		if !consumer.handlerMu.TryRLock() {
+			return NackRequeue
+		}
+		defer consumer.handlerMu.RUnlock()
+		return handler(d)
 	}
 
 	for err = range consumer.reconnectErrCh {
@@ -107,12 +114,27 @@ func (consumer *Consumer) Run(handler Handler) error {
 }
 
 // Close cleans up resources and closes the consumer.
+// It waits for handler to finish before returning by default
+// (use WithConsumerOptionsForceShutdown option to disable this behavior).
+// Use CloseWithContext to specify a context to cancel the handler completion.
 // It does not close the connection manager, just the subscription
 // to the connection manager and the consuming goroutines.
 // Only call once.
 func (consumer *Consumer) Close() {
-	consumer.isClosedMux.Lock()
-	defer consumer.isClosedMux.Unlock()
+	if consumer.options.CloseGracefully {
+		consumer.options.Logger.Infof("waiting for handler to finish...")
+		err := consumer.waitForHandlerCompletion(context.Background())
+		if err != nil {
+			consumer.options.Logger.Warnf("error while waiting for handler to finish: %v", err)
+		}
+	}
+
+	consumer.cleanupResources()
+}
+
+func (consumer *Consumer) cleanupResources() {
+	consumer.isClosedMu.Lock()
+	defer consumer.isClosedMu.Unlock()
 	consumer.isClosed = true
 	// close the channel so that rabbitmq server knows that the
 	// consumer has been stopped.
@@ -127,6 +149,24 @@ func (consumer *Consumer) Close() {
 	}()
 }
 
+// CloseWithContext cleans up resources and closes the consumer.
+// It waits for handler to finish before returning
+// (use WithConsumerOptionsForceShutdown option to disable this behavior).
+// Use the context to cancel the handler completion.
+// CloseWithContext does not close the connection manager, just the subscription
+// to the connection manager and the consuming goroutines.
+// Only call once.
+func (consumer *Consumer) CloseWithContext(ctx context.Context) {
+	if consumer.options.CloseGracefully {
+		err := consumer.waitForHandlerCompletion(ctx)
+		if err != nil {
+			consumer.options.Logger.Warnf("error while waiting for handler to finish: %v", err)
+		}
+	}
+
+	consumer.cleanupResources()
+}
+
 // startGoroutines declares the queue if it doesn't exist,
 // binds the queue to the routing key(s), and starts the goroutines
 // that will consume from the queue
@@ -134,6 +174,9 @@ func (consumer *Consumer) startGoroutines(
 	handler Handler,
 	options ConsumerOptions,
 ) error {
+	consumer.isClosedMu.Lock()
+	defer consumer.isClosedMu.Unlock()
+
 	err := consumer.chanManager.QosSafe(
 		options.QOSPrefetch,
 		0,
@@ -172,19 +215,19 @@ func (consumer *Consumer) startGoroutines(
 	}
 
 	for i := 0; i < options.Concurrency; i++ {
-		go handlerGoroutine(consumer, msgs, options, handler)
+		go consumer.handlerGoroutine(msgs, options, handler)
 	}
 	consumer.options.Logger.Infof("Processing messages on %v goroutines", options.Concurrency)
 	return nil
 }
 
 func (consumer *Consumer) getIsClosed() bool {
-	consumer.isClosedMux.RLock()
-	defer consumer.isClosedMux.RUnlock()
+	consumer.isClosedMu.RLock()
+	defer consumer.isClosedMu.RUnlock()
 	return consumer.isClosed
 }
 
-func handlerGoroutine(consumer *Consumer, msgs <-chan amqp.Delivery, consumeOptions ConsumerOptions, handler Handler) {
+func (consumer *Consumer) handlerGoroutine(msgs <-chan amqp.Delivery, consumeOptions ConsumerOptions, handler Handler) {
 	for msg := range msgs {
 		if consumer.getIsClosed() {
 			break
@@ -215,4 +258,24 @@ func handlerGoroutine(consumer *Consumer, msgs <-chan amqp.Delivery, consumeOpti
 		}
 	}
 	consumer.options.Logger.Infof("rabbit consumer goroutine closed")
+}
+
+func (consumer *Consumer) waitForHandlerCompletion(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	} else if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	c := make(chan struct{})
+	go func() {
+		consumer.handlerMu.Lock()
+		defer consumer.handlerMu.Unlock()
+		close(c)
+	}()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-c:
+		return nil
+	}
 }

@@ -8,8 +8,8 @@ import (
 func (m *Manager) NotifyBlockedSafe(
 	receiver chan amqp.Blocking,
 ) chan amqp.Blocking {
-	m.connectionMux.RLock()
-	defer m.connectionMux.RUnlock()
+	m.connectionMu.RLock()
+	defer m.connectionMu.RUnlock()
 	return m.connection.NotifyBlocked(
 		receiver,
 	)

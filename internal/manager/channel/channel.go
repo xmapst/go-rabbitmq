@@ -14,14 +14,14 @@ import (
 
 // Manager -
 type Manager struct {
-	logger               logger.Logger
-	channel              *amqp.Channel
-	connManager          *connection.Manager
-	channelMux           *sync.RWMutex
-	reconnectInterval    time.Duration
-	reconnectionCount    uint
-	reconnectionCountMux *sync.Mutex
-	dispatcher           *dispatcher.Dispatcher
+	logger              logger.Logger
+	channel             *amqp.Channel
+	connManager         *connection.Manager
+	channelMu           *sync.RWMutex
+	reconnectInterval   time.Duration
+	reconnectionCount   uint
+	reconnectionCountMu *sync.Mutex
+	dispatcher          *dispatcher.Dispatcher
 }
 
 // New creates a new connection manager
@@ -32,14 +32,14 @@ func New(connManager *connection.Manager, log logger.Logger, reconnectInterval t
 	}
 
 	chanManager := Manager{
-		logger:               log,
-		connManager:          connManager,
-		channel:              ch,
-		channelMux:           &sync.RWMutex{},
-		reconnectInterval:    reconnectInterval,
-		reconnectionCount:    0,
-		reconnectionCountMux: &sync.Mutex{},
-		dispatcher:           dispatcher.New(),
+		logger:              log,
+		connManager:         connManager,
+		channel:             ch,
+		channelMu:           &sync.RWMutex{},
+		reconnectInterval:   reconnectInterval,
+		reconnectionCount:   0,
+		reconnectionCountMu: &sync.Mutex{},
+		dispatcher:          dispatcher.New(),
 	}
 
 	go chanManager.startNotifyCancelOrClosed()
@@ -91,15 +91,15 @@ func (m *Manager) startNotifyCancelOrClosed() {
 
 // GetReconnectionCount -
 func (m *Manager) GetReconnectionCount() uint {
-	m.reconnectionCountMux.Lock()
-	defer m.reconnectionCountMux.Unlock()
+	m.reconnectionCountMu.Lock()
+	defer m.reconnectionCountMu.Unlock()
 
 	return m.reconnectionCount
 }
 
 func (m *Manager) incrementReconnectionCount() {
-	m.reconnectionCountMux.Lock()
-	defer m.reconnectionCountMux.Unlock()
+	m.reconnectionCountMu.Lock()
+	defer m.reconnectionCountMu.Unlock()
 
 	m.reconnectionCount++
 }
@@ -108,18 +108,13 @@ func (m *Manager) incrementReconnectionCount() {
 func (m *Manager) reconnectLoop() {
 	for {
 		m.logger.Infof("waiting %s seconds to attempt to reconnect to amqp server", m.reconnectInterval)
-
 		time.Sleep(m.reconnectInterval)
-
 		err := m.reconnect()
-
 		if err != nil {
 			m.logger.Errorf("error reconnecting to amqp server: %v", err)
 		} else {
 			m.incrementReconnectionCount()
-
 			go m.startNotifyCancelOrClosed()
-
 			return
 		}
 	}
@@ -127,11 +122,10 @@ func (m *Manager) reconnectLoop() {
 
 // reconnect safely closes the current channel and obtains a new one
 func (m *Manager) reconnect() error {
-	m.channelMux.Lock()
-	defer m.channelMux.Unlock()
+	m.channelMu.Lock()
+	defer m.channelMu.Unlock()
 
 	newChannel, err := getNewChannel(m.connManager)
-
 	if err != nil {
 		return err
 	}
@@ -141,16 +135,15 @@ func (m *Manager) reconnect() error {
 	}
 
 	m.channel = newChannel
-
 	return nil
 }
 
 // Close safely closes the current channel and connection
 func (m *Manager) Close() error {
 	m.logger.Infof("closing channel manager...")
+	m.channelMu.Lock()
+	defer m.channelMu.Unlock()
 
-	m.channelMux.Lock()
-	defer m.channelMux.Unlock()
 	err := m.channel.Close()
 	if err != nil {
 		m.logger.Errorf("close err: %v", err)

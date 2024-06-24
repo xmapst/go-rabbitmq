@@ -1,6 +1,8 @@
 package connection
 
 import (
+	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -12,33 +14,57 @@ import (
 
 // Manager -
 type Manager struct {
-	logger               logger.Logger
-	url                  string
-	connection           *amqp.Connection
-	amqpConfig           amqp.Config
-	connectionMux        *sync.RWMutex
-	ReconnectInterval    time.Duration
-	reconnectionCount    uint
-	reconnectionCountMux *sync.Mutex
-	dispatcher           *dispatcher.Dispatcher
+	logger              logger.Logger
+	resolver            Resolver
+	connection          *amqp.Connection
+	amqpConfig          amqp.Config
+	connectionMu        *sync.RWMutex
+	ReconnectInterval   time.Duration
+	reconnectionCount   uint
+	reconnectionCountMu *sync.Mutex
+	dispatcher          *dispatcher.Dispatcher
+}
+
+type Resolver interface {
+	Resolve() ([]string, error)
+}
+
+// dial will attempt to connect to the a list of urls in the order they are
+// given.
+func dial(log logger.Logger, resolver Resolver, conf amqp.Config) (*amqp.Connection, error) {
+	urls, err := resolver.Resolve()
+	if err != nil {
+		return nil, fmt.Errorf("error resolving amqp server urls: %w", err)
+	}
+
+	var errs []error
+	for _, url := range urls {
+		conn, err := amqp.DialConfig(url, amqp.Config(conf))
+		if err == nil {
+			return conn, err
+		}
+		log.Warnf("failed to connect to amqp server %s: %v", url, err)
+		errs = append(errs, err)
+	}
+	return nil, errors.Join(errs...)
 }
 
 // New creates a new connection manager
-func New(url string, conf amqp.Config, log logger.Logger, reconnectInterval time.Duration) (*Manager, error) {
-	conn, err := amqp.DialConfig(url, conf)
+func New(resolver Resolver, conf amqp.Config, log logger.Logger, reconnectInterval time.Duration) (*Manager, error) {
+	conn, err := dial(log, resolver, conf)
 	if err != nil {
 		return nil, err
 	}
 	connManager := Manager{
-		logger:               log,
-		url:                  url,
-		connection:           conn,
-		amqpConfig:           conf,
-		connectionMux:        &sync.RWMutex{},
-		ReconnectInterval:    reconnectInterval,
-		reconnectionCount:    0,
-		reconnectionCountMux: &sync.Mutex{},
-		dispatcher:           dispatcher.New(),
+		logger:              log,
+		resolver:            resolver,
+		connection:          conn,
+		amqpConfig:          conf,
+		connectionMu:        &sync.RWMutex{},
+		ReconnectInterval:   reconnectInterval,
+		reconnectionCount:   0,
+		reconnectionCountMu: &sync.Mutex{},
+		dispatcher:          dispatcher.New(),
 	}
 	go connManager.startNotifyClose()
 	return &connManager, nil
@@ -47,15 +73,13 @@ func New(url string, conf amqp.Config, log logger.Logger, reconnectInterval time
 // Close safely closes the current channel and connection
 func (m *Manager) Close() error {
 	m.logger.Infof("closing connection manager...")
-	m.connectionMux.Lock()
-	defer m.connectionMux.Unlock()
+	m.connectionMu.Lock()
+	defer m.connectionMu.Unlock()
 
 	err := m.connection.Close()
 	if err != nil {
-		m.logger.Errorf("close err: %v", err)
 		return err
 	}
-	m.logger.Infof("amqp connection closed gracefully")
 	return nil
 }
 
@@ -67,13 +91,13 @@ func (m *Manager) NotifyReconnect() (<-chan error, chan<- struct{}) {
 
 // CheckoutConnection -
 func (m *Manager) CheckoutConnection() *amqp.Connection {
-	m.connectionMux.RLock()
+	m.connectionMu.RLock()
 	return m.connection
 }
 
 // CheckinConnection -
 func (m *Manager) CheckinConnection() {
-	m.connectionMux.RUnlock()
+	m.connectionMu.RUnlock()
 }
 
 // startNotifyCancelOrClosed listens on the channel's cancelled and closed
@@ -88,9 +112,7 @@ func (m *Manager) startNotifyClose() {
 		m.logger.Errorf("attempting to reconnect to amqp server after connection close with error: %v", err)
 		m.reconnectLoop()
 		m.logger.Warnf("successfully reconnected to amqp server")
-		if _err := m.dispatcher.Dispatch(err); _err != nil {
-			m.logger.Warnf("connection dispatch err: %v", err)
-		}
+		_ = m.dispatcher.Dispatch(err)
 	}
 	if err == nil {
 		m.logger.Infof("amqp connection closed gracefully")
@@ -99,14 +121,14 @@ func (m *Manager) startNotifyClose() {
 
 // GetReconnectionCount -
 func (m *Manager) GetReconnectionCount() uint {
-	m.reconnectionCountMux.Lock()
-	defer m.reconnectionCountMux.Unlock()
+	m.reconnectionCountMu.Lock()
+	defer m.reconnectionCountMu.Unlock()
 	return m.reconnectionCount
 }
 
 func (m *Manager) incrementReconnectionCount() {
-	m.reconnectionCountMux.Lock()
-	defer m.reconnectionCountMux.Unlock()
+	m.reconnectionCountMu.Lock()
+	defer m.reconnectionCountMu.Unlock()
 	m.reconnectionCount++
 }
 
@@ -128,9 +150,10 @@ func (m *Manager) reconnectLoop() {
 
 // reconnect safely closes the current channel and obtains a new one
 func (m *Manager) reconnect() error {
-	m.connectionMux.Lock()
-	defer m.connectionMux.Unlock()
-	newConn, err := amqp.DialConfig(m.url, m.amqpConfig)
+	m.connectionMu.Lock()
+	defer m.connectionMu.Unlock()
+
+	conn, err := dial(m.logger, m.resolver, m.amqpConfig)
 	if err != nil {
 		return err
 	}
@@ -139,6 +162,6 @@ func (m *Manager) reconnect() error {
 		m.logger.Warnf("error closing connection while reconnecting: %v", err)
 	}
 
-	m.connection = newConn
+	m.connection = conn
 	return nil
 }
