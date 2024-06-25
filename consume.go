@@ -67,6 +67,7 @@ func NewConsumer(
 
 	consumer := &Consumer{
 		options:    options,
+		handlerMu:  &sync.RWMutex{},
 		isClosedMu: &sync.RWMutex{},
 		isClosed:   false,
 	}
