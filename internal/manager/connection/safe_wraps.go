@@ -20,7 +20,6 @@ func (m *Manager) startNotifyBlockedHandler() {
 		}
 		m.blockedMu.Unlock()
 	}
-	return
 }
 
 func (m *Manager) Blocked() bool {
