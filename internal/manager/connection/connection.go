@@ -23,6 +23,9 @@ type Manager struct {
 	reconnectionCount   uint
 	reconnectionCountMu *sync.Mutex
 	dispatcher          *dispatcher.Dispatcher
+
+	blocked   bool
+	blockedMu *sync.RWMutex
 }
 
 type Resolver interface {
@@ -65,8 +68,11 @@ func New(resolver Resolver, conf amqp.Config, log logger.Logger, reconnectInterv
 		reconnectionCount:   0,
 		reconnectionCountMu: &sync.Mutex{},
 		dispatcher:          dispatcher.New(),
+		blocked:             false,
+		blockedMu:           &sync.RWMutex{},
 	}
 	go connManager.startNotifyClose()
+	go connManager.startNotifyBlockedHandler()
 	return &connManager, nil
 }
 
