@@ -4,7 +4,7 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-// NotifyBlockedSafe safely wraps the (*amqp.Connection).NotifyBlocked method
+// startNotifyBlockedHandler safely wraps the (*amqp.Connection).NotifyBlocked method
 func (m *Manager) startNotifyBlockedHandler() {
 	m.connectionMu.RLock()
 	defer m.connectionMu.RUnlock()
