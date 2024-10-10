@@ -10,12 +10,18 @@ type Declarator struct {
 	chanManager *channel.Manager
 }
 
-func NewDeclarator(conn *Conn) (*Declarator, error) {
+func NewDeclarator(conn *Conn, optionFuncs ...func(*DeclareOptions)) (*Declarator, error) {
+	defaultOptions := getDefaultDeclareOptions()
+	options := &defaultOptions
+	for _, optionFunc := range optionFuncs {
+		optionFunc(options)
+	}
+
 	if conn.connManager == nil {
 		return nil, errors.New("connection manager can't be nil")
 	}
 
-	chanManager, err := channel.New(conn.connManager, &stdDebugLogger{}, conn.connManager.ReconnectInterval)
+	chanManager, err := channel.New(conn.connManager, options.ConfirmMode, options.Logger, conn.connManager.ReconnectInterval)
 	if err != nil {
 		return nil, err
 	}
