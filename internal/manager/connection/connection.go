@@ -149,6 +149,7 @@ func (m *Manager) reconnectLoop() {
 		} else {
 			m.incrementReconnectionCount()
 			go m.startNotifyClose()
+			go m.startNotifyBlockedHandler()
 			return
 		}
 	}

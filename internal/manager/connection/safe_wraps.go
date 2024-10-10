@@ -6,9 +6,9 @@ import (
 
 // startNotifyBlockedHandler safely wraps the (*amqp.Connection).NotifyBlocked method
 func (m *Manager) startNotifyBlockedHandler() {
-	m.connectionMu.RLock()
-	defer m.connectionMu.RUnlock()
-	receiver := m.connection.NotifyBlocked(make(chan amqp.Blocking))
+	conn := m.CheckoutConnection()
+	m.CheckinConnection()
+	receiver := conn.NotifyBlocked(make(chan amqp.Blocking))
 	for r := range receiver {
 		m.blockedMu.Lock()
 		if r.Active {
