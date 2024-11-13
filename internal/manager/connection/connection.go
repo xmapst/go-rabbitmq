@@ -3,6 +3,7 @@ package connection
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"sync"
 	"time"
 
@@ -34,19 +35,19 @@ type Resolver interface {
 
 // dial will attempt to connect to the a list of urls in the order they are
 // given.
-func dial(log logger.Logger, resolver Resolver, conf amqp.Config) (*amqp.Connection, error) {
-	urls, err := resolver.Resolve()
+func (m *Manager) dial() (*amqp.Connection, error) {
+	urls, err := m.resolver.Resolve()
 	if err != nil {
 		return nil, fmt.Errorf("error resolving amqp server urls: %w", err)
 	}
 
 	var errs []error
 	for _, url := range urls {
-		conn, err := amqp.DialConfig(url, amqp.Config(conf))
+		conn, err := amqp.DialConfig(url, m.amqpConfig)
 		if err == nil {
 			return conn, err
 		}
-		log.Warnf("failed to connect to amqp server %s: %v", url, err)
+		m.logger.Warnf("failed to connect to amqp server %s: %v", m.hidePassword(url), err)
 		errs = append(errs, err)
 	}
 	return nil, errors.Join(errs...)
@@ -54,14 +55,9 @@ func dial(log logger.Logger, resolver Resolver, conf amqp.Config) (*amqp.Connect
 
 // New creates a new connection manager
 func New(resolver Resolver, conf amqp.Config, log logger.Logger, reconnectInterval time.Duration) (*Manager, error) {
-	conn, err := dial(log, resolver, conf)
-	if err != nil {
-		return nil, err
-	}
 	connManager := Manager{
 		logger:              log,
 		resolver:            resolver,
-		connection:          conn,
 		amqpConfig:          conf,
 		connectionMu:        &sync.RWMutex{},
 		ReconnectInterval:   reconnectInterval,
@@ -71,6 +67,11 @@ func New(resolver Resolver, conf amqp.Config, log logger.Logger, reconnectInterv
 		blocked:             false,
 		blockedMu:           &sync.RWMutex{},
 	}
+	conn, err := connManager.dial()
+	if err != nil {
+		return nil, err
+	}
+	connManager.connection = conn
 	go connManager.startNotifyClose()
 	go connManager.startNotifyBlockedHandler()
 	return &connManager, nil
@@ -160,7 +161,7 @@ func (m *Manager) reconnect() error {
 	m.connectionMu.Lock()
 	defer m.connectionMu.Unlock()
 
-	conn, err := dial(m.logger, m.resolver, m.amqpConfig)
+	conn, err := m.dial()
 	if err != nil {
 		return err
 	}
@@ -171,4 +172,11 @@ func (m *Manager) reconnect() error {
 
 	m.connection = conn
 	return nil
+}
+
+func (m *Manager) hidePassword(url string) string {
+	// 匹配用户名和密码的正则表达式
+	re := regexp.MustCompile(`(:)([^@]+)(@)`)
+	// 替换密码部分为 `:******@`
+	return re.ReplaceAllString(url, "$1******$3")
 }

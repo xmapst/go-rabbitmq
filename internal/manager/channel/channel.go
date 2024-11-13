@@ -27,15 +27,9 @@ type Manager struct {
 
 // New creates a new connection manager
 func New(connManager *connection.Manager, confirmMode bool, log logger.Logger, reconnectInterval time.Duration) (*Manager, error) {
-	ch, err := getNewChannel(connManager)
-	if err != nil {
-		return nil, err
-	}
-
 	chanManager := Manager{
 		logger:              log,
 		connManager:         connManager,
-		channel:             ch,
 		channelMu:           &sync.RWMutex{},
 		reconnectInterval:   reconnectInterval,
 		reconnectionCount:   0,
@@ -44,14 +38,20 @@ func New(connManager *connection.Manager, confirmMode bool, log logger.Logger, r
 		inConfirmMode:       confirmMode,
 	}
 
+	ch, err := chanManager.getNewChannel()
+	if err != nil {
+		return nil, err
+	}
+
+	chanManager.channel = ch
 	go chanManager.startNotifyCancelOrClosed()
 
 	return &chanManager, nil
 }
 
-func getNewChannel(connManager *connection.Manager) (*amqp.Channel, error) {
-	conn := connManager.CheckoutConnection()
-	defer connManager.CheckinConnection()
+func (m *Manager) getNewChannel() (*amqp.Channel, error) {
+	conn := m.connManager.CheckoutConnection()
+	defer m.connManager.CheckinConnection()
 
 	ch, err := conn.Channel()
 	if err != nil {
@@ -127,7 +127,7 @@ func (m *Manager) reconnect() error {
 	m.channelMu.Lock()
 	defer m.channelMu.Unlock()
 
-	newChannel, err := getNewChannel(m.connManager)
+	newChannel, err := m.getNewChannel()
 	if err != nil {
 		return err
 	}

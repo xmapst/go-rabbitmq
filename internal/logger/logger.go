@@ -3,8 +3,8 @@ package logger
 // Logger is describes a logging structure. It can be set using
 // WithPublisherOptionsLogger() or WithConsumerOptionsLogger().
 type Logger interface {
-	Errorf(string, ...interface{})
-	Warnf(string, ...interface{})
-	Infof(string, ...interface{})
-	Debugf(string, ...interface{})
+	Errorf(string, ...any)
+	Warnf(string, ...any)
+	Infof(string, ...any)
+	Debugf(string, ...any)
 }
