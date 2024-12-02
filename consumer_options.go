@@ -347,3 +347,10 @@ func WithConsumerOptionsQueueMessageExpiration(ttl time.Duration) func(*Consumer
 		options.QueueOptions.Args["x-message-ttl"] = ttl.Milliseconds()
 	}
 }
+
+// WithConsumerStreamOffset sets the stream offset
+func WithConsumerStreamOffset(offset any) func(options *ConsumerOptions) {
+	return func(options *ConsumerOptions) {
+		options.RabbitConsumerOptions.Args["x-stream-offset"] = offset
+	}
+}

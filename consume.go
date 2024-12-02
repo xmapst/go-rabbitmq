@@ -24,7 +24,7 @@ const (
 	NackDiscard
 	// NackRequeue deliver this message to a different consumer.
 	NackRequeue
-	// Message acknowledgement is left to the user using the msg.Ack() method
+	// Manual Message acknowledgement is left to the user using the msg.Ack() method
 	Manual
 )
 
@@ -72,7 +72,12 @@ func NewConsumer(
 		isClosed:   false,
 	}
 	var err error
-	consumer.chanManager, err = channel.New(conn.connManager, false, options.Logger, conn.connManager.ReconnectInterval)
+	consumer.chanManager, err = channel.New(
+		conn.connManager,
+		false,
+		options.Logger,
+		conn.connManager.ReconnectInterval,
+	)
 	if err != nil {
 		return nil, err
 	}
