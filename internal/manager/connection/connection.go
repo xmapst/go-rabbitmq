@@ -174,6 +174,14 @@ func (m *Manager) reconnect() error {
 	return nil
 }
 
+// IsClosed checks if the connection is closed
+func (m *Manager) IsClosed() bool {
+	m.connectionMu.Lock()
+	defer m.connectionMu.Unlock()
+
+	return m.connection.IsClosed()
+}
+
 func (m *Manager) maskPassword(urlToMask string) string {
 	parsedUrl, _ := url.Parse(urlToMask)
 	return parsedUrl.Redacted()

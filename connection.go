@@ -85,3 +85,8 @@ func (conn *Conn) Close() error {
 	conn.closeConnectionToManagerCh <- struct{}{}
 	return conn.connManager.Close()
 }
+
+// IsClosed returns whether the connection is closed or not
+func (conn *Conn) IsClosed() bool {
+	return conn.connManager.IsClosed()
+}
