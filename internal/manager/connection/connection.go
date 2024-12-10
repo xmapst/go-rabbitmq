@@ -3,7 +3,7 @@ package connection
 import (
 	"errors"
 	"fmt"
-	"regexp"
+	"net/url"
 	"sync"
 	"time"
 
@@ -42,12 +42,12 @@ func (m *Manager) dial() (*amqp.Connection, error) {
 	}
 
 	var errs []error
-	for _, url := range urls {
-		conn, err := amqp.DialConfig(url, m.amqpConfig)
+	for _, _url := range urls {
+		conn, err := amqp.DialConfig(_url, m.amqpConfig)
 		if err == nil {
 			return conn, err
 		}
-		m.logger.Warnf("failed to connect to amqp server %s: %v", m.hidePassword(url), err)
+		m.logger.Warnf("failed to connect to amqp server %s: %v", m.maskPassword(_url), err)
 		errs = append(errs, err)
 	}
 	return nil, errors.Join(errs...)
@@ -174,9 +174,7 @@ func (m *Manager) reconnect() error {
 	return nil
 }
 
-func (m *Manager) hidePassword(url string) string {
-	// 匹配用户名和密码的正则表达式
-	re := regexp.MustCompile(`(:)([^@]+)(@)`)
-	// 替换密码部分为 `:******@`
-	return re.ReplaceAllString(url, "$1******$3")
+func (m *Manager) maskPassword(urlToMask string) string {
+	parsedUrl, _ := url.Parse(urlToMask)
+	return parsedUrl.Redacted()
 }
