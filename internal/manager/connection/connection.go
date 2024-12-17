@@ -25,8 +25,12 @@ type Manager struct {
 	reconnectionCountMu *sync.Mutex
 	dispatcher          *dispatcher.Dispatcher
 
-	blocked   bool
-	blockedMu *sync.RWMutex
+	// universalNotifyBlockingReceiver receives block signal from underlying
+	// connection which are broadcasted to all publisherNotifyBlockingReceivers
+	universalNotifyBlockingReceiver     chan amqp.Blocking
+	universalNotifyBlockingReceiverUsed bool
+	publisherNotifyBlockingReceiversMu  *sync.RWMutex
+	publisherNotifyBlockingReceivers    []chan amqp.Blocking
 }
 
 type Resolver interface {
@@ -56,16 +60,16 @@ func (m *Manager) dial() (*amqp.Connection, error) {
 // New creates a new connection manager
 func New(resolver Resolver, conf amqp.Config, log logger.Logger, reconnectInterval time.Duration) (*Manager, error) {
 	connManager := Manager{
-		logger:              log,
-		resolver:            resolver,
-		amqpConfig:          conf,
-		connectionMu:        &sync.RWMutex{},
-		ReconnectInterval:   reconnectInterval,
-		reconnectionCount:   0,
-		reconnectionCountMu: &sync.Mutex{},
-		dispatcher:          dispatcher.New(),
-		blocked:             false,
-		blockedMu:           &sync.RWMutex{},
+		logger:                             log,
+		resolver:                           resolver,
+		amqpConfig:                         conf,
+		connectionMu:                       &sync.RWMutex{},
+		ReconnectInterval:                  reconnectInterval,
+		reconnectionCount:                  0,
+		reconnectionCountMu:                &sync.Mutex{},
+		dispatcher:                         dispatcher.New(),
+		universalNotifyBlockingReceiver:    make(chan amqp.Blocking),
+		publisherNotifyBlockingReceiversMu: &sync.RWMutex{},
 	}
 	conn, err := connManager.dial()
 	if err != nil {
@@ -73,7 +77,7 @@ func New(resolver Resolver, conf amqp.Config, log logger.Logger, reconnectInterv
 	}
 	connManager.connection = conn
 	go connManager.startNotifyClose()
-	go connManager.startNotifyBlockedHandler()
+	go connManager.readUniversalBlockReceiver()
 	return &connManager, nil
 }
 
@@ -150,7 +154,6 @@ func (m *Manager) reconnectLoop() {
 		} else {
 			m.incrementReconnectionCount()
 			go m.startNotifyClose()
-			go m.startNotifyBlockedHandler()
 			return
 		}
 	}

@@ -51,11 +51,16 @@ type Publisher struct {
 	disablePublishDueToFlow   bool
 	disablePublishDueToFlowMu *sync.RWMutex
 
+	disablePublishDueToBlocked   bool
+	disablePublishDueToBlockedMu *sync.RWMutex
+
 	handlerMu            *sync.Mutex
 	notifyReturnHandler  func(r Return)
 	notifyPublishHandler func(p Confirmation)
 
 	options PublisherOptions
+
+	blockings chan amqp.Blocking
 }
 
 type PublisherConfirmation []*amqp.DeferredConfirmation
@@ -76,13 +81,15 @@ func NewPublisher(conn *Conn, optionFuncs ...func(*PublisherOptions)) (*Publishe
 		return nil, errors.New("connection manager can't be nil")
 	}
 	publisher := &Publisher{
-		connManager:               conn.connManager,
-		disablePublishDueToFlow:   false,
-		disablePublishDueToFlowMu: &sync.RWMutex{},
-		handlerMu:                 &sync.Mutex{},
-		notifyReturnHandler:       nil,
-		notifyPublishHandler:      nil,
-		options:                   *options,
+		connManager:                  conn.connManager,
+		disablePublishDueToFlow:      false,
+		disablePublishDueToFlowMu:    &sync.RWMutex{},
+		disablePublishDueToBlocked:   false,
+		disablePublishDueToBlockedMu: &sync.RWMutex{},
+		handlerMu:                    &sync.Mutex{},
+		notifyReturnHandler:          nil,
+		notifyPublishHandler:         nil,
+		options:                      *options,
 	}
 	var err error
 	publisher.chanManager, err = channel.New(conn.connManager, options.ConfirmMode, options.Logger, conn.connManager.ReconnectInterval)
@@ -126,6 +133,7 @@ func (publisher *Publisher) startup() error {
 		return fmt.Errorf("declare exchange failed: %w", err)
 	}
 	go publisher.startNotifyFlowHandler()
+	go publisher.startNotifyBlockedHandler()
 	return nil
 }
 
@@ -153,7 +161,9 @@ func (publisher *Publisher) PublishWithContext(
 		return fmt.Errorf("publishing blocked due to high flow on the server")
 	}
 
-	if publisher.connManager.Blocked() {
+	publisher.disablePublishDueToBlockedMu.RLock()
+	defer publisher.disablePublishDueToBlockedMu.RUnlock()
+	if publisher.disablePublishDueToBlocked {
 		return fmt.Errorf("publishing blocked due to TCP block on the server")
 	}
 
@@ -215,7 +225,9 @@ func (publisher *Publisher) PublishWithDeferredConfirmWithContext(
 		return nil, fmt.Errorf("publishing blocked due to high flow on the server")
 	}
 
-	if publisher.connManager.Blocked() {
+	publisher.disablePublishDueToBlockedMu.RLock()
+	defer publisher.disablePublishDueToBlockedMu.RUnlock()
+	if publisher.disablePublishDueToBlocked {
 		return nil, fmt.Errorf("publishing blocked due to TCP block on the server")
 	}
 
@@ -274,6 +286,7 @@ func (publisher *Publisher) Close() {
 		publisher.options.Logger.Warnf("error while closing the channel: %v", err)
 	}
 	publisher.options.Logger.Infof("closing publisher...")
+	publisher.connManager.RemovePublisherBlockingReceiver(publisher.blockings)
 	go func() {
 		publisher.closeConnectionToManagerCh <- struct{}{}
 	}()
