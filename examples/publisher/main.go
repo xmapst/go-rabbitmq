@@ -49,7 +49,6 @@ func main() {
 
 	go func() {
 		sig := <-sigs
-		fmt.Println()
 		fmt.Println(sig)
 		done <- true
 	}()

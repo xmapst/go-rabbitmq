@@ -56,7 +56,6 @@ func main() {
 		fmt.Println("awaiting signal")
 		select {
 		case sig := <-sigs:
-			fmt.Println()
 			fmt.Println(sig)
 		case err := <-errs:
 			log.Print(err)

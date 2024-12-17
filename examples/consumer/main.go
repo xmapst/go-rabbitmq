@@ -39,8 +39,6 @@ func main() {
 	go func() {
 		fmt.Println("awaiting signal")
 		sig := <-sigs
-
-		fmt.Println()
 		fmt.Println(sig)
 		fmt.Println("stopping consumer")
 
