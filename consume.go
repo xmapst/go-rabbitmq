@@ -102,15 +102,13 @@ func (consumer *Consumer) Run(handler Handler) error {
 		return err
 	}
 
-	for {
-		select {
-		case <-consumer.reconnectErrCh:
-			err = consumer.startConsumer(handlerWrapper)
-			if err != nil {
-				return err
-			}
+	for range consumer.reconnectErrCh {
+		err = consumer.startConsumer(handlerWrapper)
+		if err != nil {
+			return err
 		}
 	}
+	return nil
 }
 
 func (consumer *Consumer) startConsumer(handlerWrapper Handler) error {
