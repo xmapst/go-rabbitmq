@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 
@@ -96,26 +97,38 @@ func (consumer *Consumer) Run(handler Handler) error {
 		defer consumer.handlerMu.RUnlock()
 		return handler(d)
 	}
-	err := consumer.startGoroutines(
-		handlerWrapper,
-		consumer.options,
-	)
+	err := consumer.startConsumer(handlerWrapper)
 	if err != nil {
 		return err
 	}
 
-	for err = range consumer.reconnectErrCh {
-		consumer.options.Logger.Infof("successful consumer recovery from: %v", err)
-		err = consumer.startGoroutines(
-			handlerWrapper,
-			consumer.options,
-		)
-		if err != nil {
-			return fmt.Errorf("error restarting consumer goroutines after cancel or close: %w", err)
+	for {
+		select {
+		case <-consumer.reconnectErrCh:
+			err = consumer.startConsumer(handlerWrapper)
+			if err != nil {
+				return err
+			}
 		}
 	}
+}
 
-	return nil
+func (consumer *Consumer) startConsumer(handlerWrapper Handler) error {
+	for {
+		if consumer.isClosed {
+			return fmt.Errorf("consumer closed")
+		}
+		if err := consumer.startGoroutines(
+			handlerWrapper,
+			consumer.options,
+		); err != nil {
+			consumer.options.Logger.Warnf("error restarting consumer goroutines after cancel or close: %v", err)
+			time.Sleep(300 * time.Millisecond)
+			continue
+		}
+		consumer.options.Logger.Infof("successful consumer recovery")
+		return nil
+	}
 }
 
 // Close cleans up resources and closes the consumer.
@@ -126,15 +139,7 @@ func (consumer *Consumer) Run(handler Handler) error {
 // to the connection manager and the consuming goroutines.
 // Only call once.
 func (consumer *Consumer) Close() {
-	if consumer.options.CloseGracefully {
-		consumer.options.Logger.Infof("waiting for handler to finish...")
-		err := consumer.waitForHandlerCompletion(context.Background())
-		if err != nil {
-			consumer.options.Logger.Warnf("error while waiting for handler to finish: %v", err)
-		}
-	}
-
-	consumer.cleanupResources()
+	consumer.CloseWithContext(context.Background())
 }
 
 func (consumer *Consumer) cleanupResources() {
@@ -163,6 +168,7 @@ func (consumer *Consumer) cleanupResources() {
 // Only call once.
 func (consumer *Consumer) CloseWithContext(ctx context.Context) {
 	if consumer.options.CloseGracefully {
+		consumer.options.Logger.Infof("waiting for handler to finish...")
 		err := consumer.waitForHandlerCompletion(ctx)
 		if err != nil {
 			consumer.options.Logger.Warnf("error while waiting for handler to finish: %v", err)

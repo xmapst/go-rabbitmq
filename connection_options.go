@@ -12,7 +12,7 @@ type ConnectionOptions struct {
 // getDefaultConnectionOptions describes the options that will be used when a value isn't provided
 func getDefaultConnectionOptions() ConnectionOptions {
 	return ConnectionOptions{
-		ReconnectInterval: time.Second * 5,
+		ReconnectInterval: time.Second * 3,
 		Logger:            stdDebugLogger{},
 		Config:            Config{},
 	}
