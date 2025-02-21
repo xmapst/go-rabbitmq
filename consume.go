@@ -121,7 +121,7 @@ func (consumer *Consumer) startConsumer(handlerWrapper Handler) error {
 			consumer.options,
 		); err != nil {
 			consumer.options.Logger.Warnf("error restarting consumer goroutines after cancel or close: %v", err)
-			time.Sleep(300 * time.Millisecond)
+			time.Sleep(3 * time.Second)
 			continue
 		}
 		consumer.options.Logger.Infof("successful consumer recovery")
