@@ -4,4 +4,4 @@ go 1.21
 
 require github.com/rabbitmq/amqp091-go v1.10.0
 
-retract [v1.1.6, v1.1.7]
+retract [v1.0.0, v1.1.8]
