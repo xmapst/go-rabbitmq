@@ -120,6 +120,7 @@ func (consumer *Consumer) startConsumer(handlerWrapper Handler) error {
 			handlerWrapper,
 			consumer.options,
 		); err != nil {
+			consumer.options.Logger.Warnf("queue %s consumer restarting", consumer.options.QueueOptions.Name)
 			consumer.options.Logger.Warnf("error restarting consumer goroutines after cancel or close: %v", err)
 			time.Sleep(3 * time.Second)
 			continue
